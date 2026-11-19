@@ -1,0 +1,23 @@
+name: Prusa Marketplace
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    uses: prusa3d/prusa-connect-marketplace-publish/.github/workflows/publish.yml@v1
+    with:
+      core-ref: sdk/v0.1.0-beta.1
+      node-version: '24'
+      bundle-command: UI_ONLY=1 sh install.sh
+      dry-run: ${{ github.event_name != 'release' }}
+    secrets:
+      PRUSA_CONNECT_EXTENSION_SIGNING_KEY: ${{ secrets.PRUSA_CONNECT_EXTENSION_SIGNING_KEY }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
