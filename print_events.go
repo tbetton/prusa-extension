@@ -83,7 +83,12 @@ func applyPrintEvent(data *snapshot, frame event.Envelope) {
 	}
 	for i := range data.Jobs {
 		job := &data.Jobs[i]
-		if job.DeviceID != origin.ID() || (job.Status != statusStarting && job.Status != statusPrinting) {
+		if job.DeviceID != origin.ID() {
+			continue
+		}
+		recovering := job.DetailCode == "unconfirmed" &&
+			(frame.Type == event.TypeDeviceJobStarted || frame.Type == event.TypeDeviceJobSettled)
+		if !recovering && job.Status != statusStarting && job.Status != statusPrinting {
 			continue
 		}
 
@@ -120,28 +125,44 @@ func applyPrintEvent(data *snapshot, frame event.Envelope) {
 			}
 		case event.TypeDeviceJobStarted:
 			var started event.JobStarted
-			if json.Unmarshal(frame.Data, &started) == nil && job.Status == statusStarting &&
-				job.CommandID != "" && job.CommandID == started.CommandID && started.JobID != "" {
-				job.Status = statusPrinting
+			if json.Unmarshal(frame.Data, &started) == nil && (job.Status == statusStarting || recovering) &&
+				job.CommandID != "" && job.CommandID == started.CommandID && started.JobID != "" &&
+				(job.PrintID == "" || job.PrintID == started.JobID) {
 				job.PrintID = started.JobID
 				job.StartedAt = &started.Started
+				markPrinting(job)
 			}
 		case event.TypeDeviceJobSettled:
 			var settled event.JobSettled
 			if json.Unmarshal(frame.Data, &settled) == nil && job.PrintID != "" && job.PrintID == settled.JobID {
-				job.EndedAt = &settled.Ended
-				switch settled.Outcome {
-				case event.JobFinished:
-					job.Status = statusDone
-				case event.JobCancelled:
-					job.Status = statusStopped
-				case event.JobFailed:
-					job.Status = statusFailed
-					job.setDetail("printFailed")
-				default:
-					holdUnconfirmed(data, job, settled.Ended)
-				}
+				settlePrint(data, job, settled.Ended, settled.Outcome)
 			}
 		}
 	}
+}
+
+func markPrinting(job *Job) {
+	job.Status = statusPrinting
+	job.EndedAt = nil
+	job.setDetail("")
+}
+
+func settlePrint(data *snapshot, job *Job, ended time.Time, outcome string) {
+	switch outcome {
+	case event.JobFinished:
+		job.Status = statusDone
+		job.setDetail("")
+	case event.JobCancelled:
+		job.Status = statusStopped
+		job.setDetail("")
+	case event.JobFailed:
+		job.Status = statusFailed
+		job.setDetail("printFailed")
+	default:
+		if job.DetailCode != "unconfirmed" {
+			holdUnconfirmed(data, job, ended)
+		}
+		return
+	}
+	job.EndedAt = &ended
 }

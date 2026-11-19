@@ -37,9 +37,9 @@ When a job starts, Connect rechecks the permissions of the person who queued or 
 
 ## Print tracking
 
-Print Queue tracks transfer and print events from Prusa Connect. When the extension transfers a file from the server, it adds a unique prefix to the filename on the printer to match the transfer with its start command. The source file keeps its name.
+Print Queue tracks transfer and print events from Prusa Connect. When an event is missing, it checks the printer's current job and job history. It matches the print ID when available, or the exact printer path and start time when they identify a single print. When the extension transfers a file from the server, it adds a unique prefix to the filename on the printer to match the transfer with its start command. The source file keeps its name.
 
-When the result of a start command is uncertain, Print Queue holds that printer's queue. Check the current print and clear the plate if needed before resuming the queue. This also applies to jobs already in progress when upgrading from version 0.1.10, which did not store tracking IDs.
+When the result of a start command is uncertain, Print Queue marks the job as Unconfirmed and holds that printer's queue. The result updates when Jobs confirms it. Check the printer and clear the plate if needed before resuming the queue.
 
 ## Settings
 

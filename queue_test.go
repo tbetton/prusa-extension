@@ -20,6 +20,8 @@ type fakeFleet struct {
 	state     string
 	connected bool
 	printed   []deviceapi.PrintParams
+	recent    deviceapi.Jobs
+	history   func(deviceapi.JobHistoryParams) (deviceapi.JobPage, error)
 }
 
 func (f *fakeFleet) Get(_ context.Context, params deviceapi.GetParams) (deviceapi.Device, error) {
@@ -35,6 +37,17 @@ func (f *fakeFleet) Print(_ context.Context, params deviceapi.PrintParams) (devi
 		return deviceapi.Started{CommandID: "c1"}, nil
 	}
 	return deviceapi.Started{TransferID: "t1"}, nil
+}
+
+func (f *fakeFleet) Jobs(_ context.Context, _ deviceapi.JobsParams) (deviceapi.Jobs, error) {
+	return f.recent, nil
+}
+
+func (f *fakeFleet) JobHistory(_ context.Context, params deviceapi.JobHistoryParams) (deviceapi.JobPage, error) {
+	if f.history == nil {
+		return deviceapi.JobPage{}, nil
+	}
+	return f.history(params)
 }
 
 type clock struct{ at time.Time }
@@ -207,6 +220,103 @@ func TestAJobThatNeverStartsFails(t *testing.T) {
 
 	if got := status(t, store, a.ID).Status; got != statusFailed {
 		t.Fatalf("job is %s, want failed", got)
+	}
+}
+
+func TestJobsRecoversAnUnconfirmedPrintAndItsActualFinishTime(t *testing.T) {
+	store, fleet, sc, c := setup(t, printerReady)
+	queued, _ := store.Add(Job{DeviceID: "p1", Path: "usb/plate.bgcode"})
+	next, _ := store.Add(Job{DeviceID: "p1", Path: "usb/next.bgcode"})
+	sc.Tick(t.Context())
+
+	started := c.at.Add(time.Second)
+	c.at = c.at.Add(3 * time.Minute)
+	if err := sc.applyWindow(busapi.Window{Resync: true}); err != nil {
+		t.Fatal(err)
+	}
+	if job := status(t, store, queued.ID); job.DetailCode != "unconfirmed" || job.PrintID != "" {
+		t.Fatalf("before recovery: %+v", job)
+	}
+
+	fleet.state = "PRINTING"
+	fleet.recent.Current = &deviceapi.Job{ID: "print-1", Path: "/usb/plate.bgcode", Started: started}
+	sc.following = false
+	sc.Tick(t.Context())
+	if job := status(t, store, queued.ID); job.Status != statusPrinting || job.PrintID != "print-1" ||
+		job.DetailCode != "" || job.EndedAt != nil || job.StartedAt == nil || !job.StartedAt.Equal(started) {
+		t.Fatalf("current print was not recovered: %+v", job)
+	}
+
+	ended := started.Add(time.Hour)
+	c.at = ended.Add(time.Minute)
+	sc.following = true
+	fleet.state = printerReady
+	fleet.recent = deviceapi.Jobs{}
+	fleet.history = func(p deviceapi.JobHistoryParams) (deviceapi.JobPage, error) {
+		if p.ID != "p1" || !p.From.Equal(started) || p.Principal != "" {
+			t.Fatalf("history query: %+v", p)
+		}
+		switch p.Cursor {
+		case "":
+			return deviceapi.JobPage{Cursor: "next"}, nil
+		case "next":
+			return deviceapi.JobPage{Items: []deviceapi.Job{{
+				ID: "print-1", Started: started, Ended: &ended, Outcome: event.JobFinished,
+			}}}, nil
+		default:
+			t.Fatalf("unexpected history cursor: %q", p.Cursor)
+			return deviceapi.JobPage{}, nil
+		}
+	}
+	sc.Tick(t.Context())
+	reopened, err := OpenStore(path.Dir(store.file), c.now, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job := status(t, reopened, queued.ID); job.Status != statusDone || job.Detail != "" || job.EndedAt == nil || !job.EndedAt.Equal(ended) {
+		t.Fatalf("finished print was not recovered and saved: %+v", job)
+	}
+	if !reopened.List("p1").Paused["p1"] || status(t, reopened, next.ID).Status != statusQueued || len(fleet.printed) != 1 {
+		t.Fatal("the queue resumed without operator confirmation")
+	}
+}
+
+func TestHistoryOnlyRecoversAnUnambiguousPrintFromTheSameAttempt(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		offsets []time.Duration
+		want    string
+	}{
+		{name: "one match in the window", offsets: []time.Duration{time.Second}, want: statusDone},
+		{name: "same path printed another time", offsets: []time.Duration{5 * time.Minute}, want: statusFailed},
+		{name: "multiple matches in the window", offsets: []time.Duration{time.Second, time.Minute}, want: statusFailed},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store, fleet, sc, c := setup(t, printerReady)
+			queued, _ := store.Add(Job{DeviceID: "p1", Path: "usb/plate.bgcode"})
+			sc.Tick(t.Context())
+			dispatched := c.at
+			c.at = c.at.Add(3 * time.Minute)
+			if err := sc.applyWindow(busapi.Window{Resync: true}); err != nil {
+				t.Fatal(err)
+			}
+			ended := c.at.Add(time.Hour)
+			c.at = ended
+			fleet.history = func(_ deviceapi.JobHistoryParams) (deviceapi.JobPage, error) {
+				var page deviceapi.JobPage
+				for _, offset := range tc.offsets {
+					page.Items = append(page.Items, deviceapi.Job{
+						ID: offset.String(), Path: "usb/plate.bgcode", Started: dispatched.Add(offset),
+						Ended: &ended, Outcome: event.JobFinished,
+					})
+				}
+				return page, nil
+			}
+			sc.Tick(t.Context())
+			if job := status(t, store, queued.ID); job.Status != tc.want {
+				t.Fatalf("history changed job to %+v, want %s", job, tc.want)
+			}
+		})
 	}
 }
 

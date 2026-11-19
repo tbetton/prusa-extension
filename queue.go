@@ -444,6 +444,8 @@ func newID() string {
 type fleet interface {
 	Get(ctx context.Context, params deviceapi.GetParams) (deviceapi.Device, error)
 	Print(ctx context.Context, params deviceapi.PrintParams) (deviceapi.Started, error)
+	Jobs(ctx context.Context, params deviceapi.JobsParams) (deviceapi.Jobs, error)
+	JobHistory(ctx context.Context, params deviceapi.JobHistoryParams) (deviceapi.JobPage, error)
 }
 
 // Scheduler starts the next job of each printer when the printer says it is
@@ -479,9 +481,6 @@ func printerState(device deviceapi.Device) string {
 func (sc *Scheduler) Tick(ctx context.Context) {
 	sc.mu.Lock()
 	defer sc.mu.Unlock()
-	if !sc.following {
-		return
-	}
 	for _, device := range sc.devicesWithWork() {
 		if ctx.Err() != nil {
 			return
@@ -498,7 +497,7 @@ func (sc *Scheduler) devicesWithWork() []string {
 	var devices []string
 
 	for _, job := range sc.store.data.Jobs {
-		if !job.finished() && !slices.Contains(devices, job.DeviceID) {
+		if (!job.finished() || job.DetailCode == "unconfirmed") && !slices.Contains(devices, job.DeviceID) {
 			devices = append(devices, job.DeviceID)
 		}
 	}
@@ -507,13 +506,19 @@ func (sc *Scheduler) devicesWithWork() []string {
 }
 
 func (sc *Scheduler) tickDevice(ctx context.Context, deviceID string) {
+	now := sc.now().UTC()
+	sc.syncPrints(ctx, deviceID, now)
+	if !sc.following || ctx.Err() != nil {
+		return
+	}
+
 	device, err := sc.fleet.Get(ctx, deviceapi.GetParams{ID: deviceID})
 	if err != nil {
 		sc.logf("read printer %s: %v", deviceID, err)
 	}
 
 	state := printerState(device)
-	now := sc.now().UTC()
+	now = sc.now().UTC()
 
 	var next *Job
 
@@ -561,6 +566,12 @@ func (sc *Scheduler) tickDevice(ctx context.Context, deviceID string) {
 			job.Status = statusStarting
 			job.StartedAt = &now
 			job.setDetail("")
+			job.PrinterPath = job.Path
+			if job.Storage != "" {
+				// Save the unique destination before calling Connect, so the
+				// attempt can be recovered even if the reply never arrives.
+				job.PrinterPath = path.Join(sc.folder, newID()+"-"+path.Base(job.Path))
+			}
 			copied := *job
 			next = &copied
 
@@ -590,14 +601,10 @@ func holdUnconfirmed(data *snapshot, job *Job, now time.Time) {
 
 // start dispatches a job only after checking the requesting user's current rights.
 func (sc *Scheduler) start(ctx context.Context, job Job) {
-	params := deviceapi.PrintParams{ID: job.DeviceID, Path: job.Path}
+	params := deviceapi.PrintParams{ID: job.DeviceID, Path: job.PrinterPath}
 	if job.Storage != "" {
 		params.Storage = job.Storage
 		params.Source = job.Path
-		// The SDK returns the transfer ID before it knows the command ID.
-		// A fresh destination lets the event stream tie the two together.
-		name := path.Base(job.Path)
-		params.Path = path.Join(sc.folder, newID()+"-"+name)
 	}
 
 	denied := sc.authorize(ctx, job)
@@ -619,6 +626,7 @@ func (sc *Scheduler) start(ctx context.Context, job Job) {
 				errors.Is(denied, accessapi.ErrTooManyQuestions) {
 				current.Status = statusQueued
 				current.StartedAt = nil
+				current.PrinterPath = ""
 				return nil
 			}
 			now := sc.now().UTC()
@@ -643,7 +651,6 @@ func (sc *Scheduler) start(ctx context.Context, job Job) {
 			current.EndedAt = &now
 			return nil
 		}
-		current.PrinterPath = params.Path
 		current.TransferID = started.TransferID
 		current.CommandID = started.CommandID
 		return nil

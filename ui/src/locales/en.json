@@ -29,6 +29,7 @@
   "print-queue.status.done": "Done",
   "print-queue.status.stopped": "Stopped",
   "print-queue.status.failed": "Failed",
+  "print-queue.status.unconfirmed": "Unconfirmed",
   "print-queue.state.UNKNOWN": "Unknown",
   "print-queue.state.OFFLINE": "Offline",
   "print-queue.state.IDLE": "Idle",

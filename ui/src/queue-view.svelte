@@ -163,7 +163,7 @@
     return isPrinterState(value) ? t(`print-queue.state.${value}`) : value;
   };
 
-  const variant = (status: Job['status']) => {
+  const variant = (status: Job['status'] | 'unconfirmed') => {
     switch (status) {
       case 'printing':
       case 'starting':
@@ -173,6 +173,7 @@
       case 'failed':
         return 'destructive' as const;
       case 'stopped':
+      case 'unconfirmed':
         return 'warning' as const;
       default:
         return 'secondary' as const;
@@ -284,6 +285,7 @@
 
 {#snippet jobRow(job: PlanJob, position?: number, slot?: Slot)}
               {@const detail = jobDetail(job)}
+              {@const displayStatus = job.detail_code === 'unconfirmed' ? 'unconfirmed' : job.status}
               <li class="flex gap-3 py-2">
                 {#if job.path}
                 <img
@@ -296,7 +298,7 @@
                 {/if}
                 <div class="flex min-w-0 flex-1 flex-col gap-1">
                 <div class="flex flex-wrap items-center gap-2">
-                  <Badge variant={variant(job.status)}>{t(`print-queue.status.${job.status}`)}</Badge>
+                  <Badge variant={variant(displayStatus)}>{t(`print-queue.status.${displayStatus}`)}</Badge>
                   {#if position !== undefined}
                     <span class="text-sm tabular-nums text-muted-foreground">{position}.</span>
                   {/if}

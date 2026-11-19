@@ -7,6 +7,11 @@ Write the entry in the same change as the code. One bullet per behaviour a
 person outside this repository can observe: a route, a setting, a screen, a
 refusal. Name the route and the setting key, never a function or a file.
 
+## 0.1.16
+
+- Print Queue recovers missing start and end events from the printer's Jobs history, including previously unconfirmed prints.
+- The queue shows an Unconfirmed badge when Connect has no verified result.
+
 ## 0.1.15
 
 - Print Queue uses English for its interface, dates, and error messages regardless of the Prusa Connect Local language setting.

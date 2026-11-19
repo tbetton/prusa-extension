@@ -6,7 +6,7 @@
 
 name: print-queue
 kind: sink
-version: 0.1.15
+version: 0.1.16
 license: MIT
 title: Print Queue
 summary: Queue and schedule prints for each printer.
@@ -22,6 +22,8 @@ require:
   core-access.check: "*"
   core-bus.subscribe: "*"
   core-device.get: "*"
+  core-device.jobs: "*"
+  core-device.job_history: "*"
   core-device.print: "*"
   core-storage.stat: "*"
 
