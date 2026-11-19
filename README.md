@@ -47,7 +47,7 @@ When the result of a start command is uncertain, Print Queue marks the job as Un
 2. Clear the plate, park the toolhead where it normally stops after printing, and check the live view. Under **Print Queue → Build plate check**, choose **Capture empty plate reference**. Test the check with automatic starts off. Queue a follow-up file and compare the reported results with what is actually on the plate, including a small object in the camera's view.
 3. To opt in, select **Allow automatic starts after the plate check**. After Prusa Connect records a successful print and the printer reports **FINISHED**, Print Queue looks for two fresh matching pictures at least 30 seconds apart. It then asks the printer to switch to **READY**. It waits for the printer to report **READY** before sending the eligible job. Capturing a replacement reference turns automatic starts off.
 
-**Server connection** defaults to `http://127.0.0.1:8080` for a shared Prusa Connect container. Automatic credential setup works with that address or with the same origin as the browser. For a different service address, set its snapshot URL and a read-only credential for that server in the standard **Settings** tab. Server-managed installs can also supply the token on one line in `plate-camera.token` next to `queue.json` (mode `0600`). Print Queue uses that file when the masked `plate_camera_token` setting is empty.
+**Server connection** defaults to `http://127.0.0.1:8080` for a shared Prusa Connect container, or `http://127.0.0.1:8090` when the app is opened on port 8090. If Docker maps the browser's port to a different port inside the container, use the internal port. Automatic credential setup works with either loopback address or with the same origin as the browser. For a different service address, set its snapshot URL and a read-only credential for that server in the standard **Settings** tab. Server-managed installs can also supply the token on one line in `plate-camera.token` next to `queue.json` (mode `0600`). Print Queue uses that file when the masked `plate_camera_token` setting is empty.
 
 Use a fixed camera that sees the entire build plate, with steady lighting and a clear view. The check compares the whole frame and can miss small or hidden objects. It holds if the camera gives stale or identical JPEGs, the view changes, or the queue is paused. It expects snapshots with a `Last-Modified` time at most eight seconds old and supports JPEGs from 320 × 240 up to two megapixels. The reference stays in the extension's data directory. Capture a new reference after changing the printer or camera.
 
@@ -64,5 +64,5 @@ Open **Settings → Extensions → Print Queue**.
 | `printer_folder` | usb | Destination folder on the printer |
 | `keep_history` | 20 | Number of finished jobs retained per printer |
 | `plate_check_printer` | unset | Device ID of the printer to check |
-| `plate_camera_url` | unset | Prusa Connect Local camera snapshot URL on port 80, 443, or 8080 |
+| `plate_camera_url` | unset | Prusa Connect Local camera snapshot URL on port 80, 443, 8080, or 8090 |
 | `plate_camera_token` | unset | Masked read-only API credential for the camera snapshot |

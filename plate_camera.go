@@ -46,9 +46,9 @@ func newPlateCamera(rawURL, tokenFile string, now func() time.Time) (*plateCamer
 		return nil, errors.New("plate_camera_url must be the Prusa Connect camera snapshot URL")
 	}
 	switch u.Port() {
-	case "", "80", "443", "8080":
+	case "", "80", "443", "8080", "8090":
 	default:
-		return nil, errors.New("plate_camera_url must use port 80, 443 or 8080")
+		return nil, errors.New("plate_camera_url must use port 80, 443, 8080 or 8090")
 	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = nil

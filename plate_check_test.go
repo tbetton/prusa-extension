@@ -280,7 +280,7 @@ func TestPlateCameraUsesTimestampAndReadToken(t *testing.T) {
 func TestPlateCameraReportsAuthenticationAndUsesConfiguredCredential(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	tokenFile := filepath.Join(t.TempDir(), "plate-camera.token")
-	camera, err := newPlateCamera("http://127.0.0.1:8080/api/v1/cameras/test/snapshot", tokenFile, func() time.Time { return now })
+	camera, err := newPlateCamera("http://127.0.0.1:8090/api/v1/cameras/test/snapshot", tokenFile, func() time.Time { return now })
 	if err != nil {
 		t.Fatal(err)
 	}

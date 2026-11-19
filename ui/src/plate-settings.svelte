@@ -23,7 +23,10 @@
   const { fleet, signal, t } = host;
   const client = host.client as PrusaConnect;
   const uid = $props.id();
-  const defaultOrigin = 'http://127.0.0.1:8080';
+  const loopback = 'http://127.0.0.1:8080';
+  const loopback8090 = 'http://127.0.0.1:8090';
+  const defaultOrigin =
+    window.location.port === '8090' ? loopback8090 : loopback;
   const snapshotPath = (camera: string): string =>
     `/api/v1/cameras/${encodeURIComponent(camera)}/snapshot`;
 
@@ -44,6 +47,7 @@
   let previewError = $state(false);
   let previewTick = $state(0);
   let replaceSnapshotURL = $state(false);
+  let updateLoopback = $state(false);
 
   const printers = $derived(
     (fleet.devices as readonly Device[])
@@ -81,7 +85,7 @@
         server.pathname !== '/' ||
         server.search ||
         server.hash ||
-        !['', '80', '443', '8080'].includes(server.port)
+        !['', '80', '443', '8080', '8090'].includes(server.port)
       )
         return '';
       return server.origin + snapshotPath(camera);
@@ -91,7 +95,9 @@
   });
   const serverOrigin = $derived(target ? new URL(target).origin : '');
   const trustedOrigin = $derived(
-    serverOrigin === defaultOrigin || serverOrigin === window.location.origin,
+    serverOrigin === loopback ||
+      serverOrigin === loopback8090 ||
+      serverOrigin === window.location.origin,
   );
   const configured = $derived(
     printer === instance?.config.plate_check_printer &&
@@ -146,10 +152,13 @@
       cameraDraft = undefined;
       origin = defaultOrigin;
       replaceSnapshotURL = false;
+      updateLoopback = false;
       if (typeof storedURL === 'string' && URL.canParse(storedURL)) {
         const url = new URL(storedURL);
         if (/^\/api\/v1\/cameras\/[^/]+\/snapshot$/u.test(url.pathname)) {
-          origin = url.origin;
+          updateLoopback =
+            url.origin === loopback && defaultOrigin === loopback8090;
+          origin = updateLoopback ? defaultOrigin : url.origin;
           cameraDraft = cameras.find(
             (candidate) =>
               candidate.device_id === printerDraft &&
@@ -221,6 +230,7 @@
       );
       saved = true;
       replaceSnapshotURL = false;
+      updateLoopback = false;
     } catch (cause) {
       // A refused write did not store this credential. On a transport
       // failure the server may already have saved it.
@@ -255,6 +265,10 @@
     {#if replaceSnapshotURL}
       <Alert>
         <AlertTitle>{t('print-queue.setup.replaceSnapshotURL')}</AlertTitle>
+      </Alert>
+    {:else if updateLoopback}
+      <Alert>
+        <AlertTitle>{t('print-queue.setup.updateLoopback')}</AlertTitle>
       </Alert>
     {/if}
     <div class="flex flex-col gap-2">

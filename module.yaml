@@ -6,7 +6,7 @@
 
 name: print-queue
 kind: sink
-version: 0.1.20
+version: 0.1.21
 license: MIT
 title: Print Queue
 summary: Queue and schedule prints for each printer.
@@ -57,7 +57,7 @@ options:
 
 egress:
   - option: plate_camera_url
-    ports: [443, 80, 8080]
+    ports: [443, 80, 8080, 8090]
     from: process
     why: Reads snapshots from the configured Prusa Connect Local server.
     sends: Sends a GET request and the optional read-only bearer token for that server.
