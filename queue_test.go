@@ -311,10 +311,11 @@ func TestAFileOnThePrinterStartsWhereItIs(t *testing.T) {
 	}
 }
 
-func TestLegacyJobDetailGetsATranslationCode(t *testing.T) {
+func TestLegacyJobDetailsAreRestoredInEnglish(t *testing.T) {
 	dir := t.TempDir()
 	old := []byte(`{"jobs":[
 		{"id":"known","device_id":"p1","status":"failed","detail":"Le transfert vers l’imprimante a échoué."},
+		{"id":"coded","device_id":"p1","status":"failed","detail":"L’impression a échoué.","detail_code":"printFailed"},
 		{"id":"custom","device_id":"p1","status":"failed","detail":"Printer diagnostic"}
 	]}`)
 	if err := os.WriteFile(filepath.Join(dir, "queue.json"), old, 0o600); err != nil {
@@ -325,8 +326,12 @@ func TestLegacyJobDetailGetsATranslationCode(t *testing.T) {
 		t.Fatal(err)
 	}
 	known := status(t, store, "known")
-	if known.DetailCode != "transferFailed" || known.Detail != "Le transfert vers l’imprimante a échoué." {
+	if known.DetailCode != "transferFailed" || known.Detail != "The transfer to the printer failed." {
 		t.Fatalf("known failure = %+v", known)
+	}
+	coded := status(t, store, "coded")
+	if coded.DetailCode != "printFailed" || coded.Detail != "The print failed." {
+		t.Fatalf("coded failure = %+v", coded)
 	}
 	custom := status(t, store, "custom")
 	if custom.DetailCode != "" || custom.Detail != "Printer diagnostic" {

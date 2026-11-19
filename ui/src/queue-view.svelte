@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { isPrinterState, PRINTER_STATE_LABEL_KEY } from '@prusa/connect-ui/domain';
-  import { formatDate, formatNumber, locale } from '@prusa/connect-ui/i18n';
+  import { isPrinterState } from '@prusa/connect-ui/domain';
+  import { SOURCE_LOCALE } from '@prusa/connect-ui/i18n';
   import {
     Badge,
     Button,
@@ -31,7 +31,7 @@
     type Queue,
   } from './api';
   import { heldHost } from './host';
-  import { formatClock, formatDuration, queueErrorText } from './i18n';
+  import { formatClock, formatDate, formatDuration, formatNumber, queueErrorText } from './i18n';
   import PrinterFiles from './printer-files.svelte';
   import {
     CHANGEOVER_MS,
@@ -160,7 +160,7 @@
     const state = fleet.device(id)?.state as Record<string, unknown> | undefined;
     const value = state?.['/state'];
     if (typeof value !== 'string') return '';
-    return isPrinterState(value) ? t(PRINTER_STATE_LABEL_KEY[value]) : value;
+    return isPrinterState(value) ? t(`print-queue.state.${value}`) : value;
   };
 
   const variant = (status: Job['status']) => {
@@ -356,7 +356,7 @@
                   <div class="flex flex-wrap items-center gap-2">
                     <input
                       type="datetime-local"
-                      lang={locale.current}
+                      lang={SOURCE_LOCALE}
                       aria-label={t('print-queue.notBefore')}
                       class="h-8 rounded-md border border-input bg-background px-2 text-sm"
                       bind:value={editValue}
@@ -375,7 +375,7 @@
 {/snippet}
 
 
-<div class="flex flex-col gap-4">
+<div lang={SOURCE_LOCALE} class="flex flex-col gap-4">
   {#if failure !== undefined}
     <p class="text-sm text-destructive">{t('print-queue.error', { message: queueErrorText(failure.error, t) })}</p>
   {/if}
@@ -436,7 +436,7 @@
                 <Timeline {slots} {now} />
                 <p class="text-xs text-muted-foreground">
                   {t('print-queue.plan.note', {
-                    changeover: Math.round(CHANGEOVER_MS / 60_000),
+                    changeover: formatNumber(Math.round(CHANGEOVER_MS / 60_000)),
                     factor: formatNumber(factor, { maximumFractionDigits: 2 }),
                   })}
                 </p>

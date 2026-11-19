@@ -7,25 +7,29 @@ Write the entry in the same change as the code. One bullet per behaviour a
 person outside this repository can observe: a route, a setting, a screen, a
 refusal. Name the route and the setting key, never a function or a file.
 
+## 0.1.15
+
+- Print Queue uses English for its interface, dates, and error messages regardless of the Prusa Connect Local language setting.
+
 ## 0.1.14
 
-- La barre latérale et l’onglet imprimante affichent « Print Queue ».
+- The sidebar and the printer tab display “Print Queue”.
 
 ## 0.1.13
 
-- La file, ses messages d’erreur et la frise suivent la langue et les formats de Prusa Connect Local, en français ou en anglais.
+- The queue, its error messages, and the timeline follow the Prusa Connect Local language and formats in English or French.
 
 ## 0.1.12
 
-- L’impression en cours et sa progression apparaissent dans la file, y compris si elle a été lancée depuis Prusa Connect ou directement sur l’imprimante.
-- La frise décale les travaux en attente selon l’heure de fin estimée de cette impression.
+- The queue shows the current print and its progress, including prints started from Prusa Connect or on the printer itself.
+- The timeline schedules waiting jobs around the current print's estimated end time.
 
 ## 0.1.11
 
-- La file respecte les droits du compte sur chaque imprimante. Un administrateur choisit explicitement les imprimantes que l’extension peut opérer.
-- Le lancement différé revérifie les droits du compte qui a mis le fichier en file.
-- Le suivi utilise les événements de transfert et d’impression de Prusa Connect. Un résultat incertain suspend la file de l’imprimante.
-- Une modification est prise en compte seulement après son enregistrement sur disque.
+- The queue respects the account's permissions on each printer. An administrator explicitly selects the printers the extension can operate.
+- When a delayed job starts, Connect rechecks the permissions of the account that queued the file.
+- The queue tracks Prusa Connect transfer and print events. An uncertain result holds the printer's queue.
+- Changes take effect after they are saved to disk.
 
 ## 0.1.0 - unreleased
 
@@ -33,6 +37,6 @@ refusal. Name the route and the setting key, never a function or a file.
 
 - `GET /print-queue` answers one line and the principal the host authorized.
 - The setting `message` sets the line that route answers with.
-- File d attente: a page of its own, with an entry in the sidebar.
-- File d attente: a tab of its own on each printer's page.
-- File d attente: an item in the action menu of each file in storage.
+- Open Print Queue from the sidebar.
+- Open the queue for a specific printer from its Print Queue tab.
+- Add a file to the queue from its action menu in server storage.

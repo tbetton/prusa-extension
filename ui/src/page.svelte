@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SOURCE_LOCALE } from '@prusa/connect-ui/i18n';
   import { PageHeader } from '@prusa/connect-ui/primitives';
 
   import { heldHost } from './host';
@@ -7,7 +8,7 @@
   const t = heldHost().t;
 </script>
 
-<div class="flex flex-col gap-4">
+<div lang={SOURCE_LOCALE} class="flex flex-col gap-4">
   <PageHeader title={t('print-queue.page.title')} />
   <QueueView />
 </div>

@@ -3,14 +3,12 @@
   queue: a fixed scale that scrolls sideways, the hours marked, a red line for
   now and one block per print at its expected time.
 
-  « Faire défiler jusqu'à maintenant » brings now back into view. With the
+  “Scroll to now” brings now back into view. With the
   automatic scroll on, the view follows now as time passes; scrolling by hand
   turns it off.
 -->
 <script lang="ts">
-  import { formatDate } from '@prusa/connect-ui/i18n';
-
-  import { formatClock, formatDuration } from './i18n';
+  import { formatClock, formatDate, formatDuration } from './i18n';
   import type { Slot } from './plan';
   import { heldHost } from './host';
 

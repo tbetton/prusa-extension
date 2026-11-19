@@ -65,9 +65,22 @@ type Job struct {
 	PrintID      string     `json:"print_id,omitempty"`
 }
 
-// The French text keeps the detail field readable for API clients and lets
-// older snapshots recover the stable code used by the browser.
 var jobDetails = map[string]string{
+	"unconfirmed":       "The result is uncertain. Check the printer before resuming the queue.",
+	"permissionChanged": "Could not verify the permissions of the person who queued this job.",
+	"missingFile":       "The file is no longer in storage.",
+	"printerPermission": "The extension cannot start a print on this printer.",
+	"startRefused":      "The printer refused to start the print.",
+	"startFailed":       "The printer could not start the print.",
+	"nameTaken":         "A file with the same name already exists on the printer.",
+	"dispatchFailed":    "Prusa Connect did not accept the job.",
+	"transferFailed":    "The transfer to the printer failed.",
+	"startRejected":     "The printer refused or could not start the print.",
+	"printFailed":       "The print failed.",
+}
+
+// Older snapshots may only have the original French text, with no detail code.
+var legacyJobDetails = map[string]string{
 	"unconfirmed":       "Le résultat est incertain. Vérifie l’imprimante avant de reprendre la file.",
 	"permissionChanged": "Les droits de la personne qui a mis ce travail en file n’ont pas pu être confirmés.",
 	"missingFile":       "Le fichier n'existe plus dans le stockage.",
@@ -133,12 +146,15 @@ func OpenStore(dir string, now func() time.Time, keep int) (*Store, error) {
 	for i := range s.data.Jobs {
 		job := &s.data.Jobs[i]
 		if job.Detail != "" && job.DetailCode == "" {
-			for code, message := range jobDetails {
+			for code, message := range legacyJobDetails {
 				if job.Detail == message {
 					job.DetailCode = code
 					break
 				}
 			}
+		}
+		if message, ok := jobDetails[job.DetailCode]; ok {
+			job.Detail = message
 		}
 	}
 

@@ -3,15 +3,12 @@
 //
 // `defineModule` is an identity function. It exists so an author gets the
 // host's types at this call site without importing the host.
-import { registerCatalogue } from '@prusa/connect-ui/i18n';
 import { defineModule } from '@prusa/connect-ui/slots';
 
 import { holdHost } from './host';
 import Page from './page.svelte';
 import DeviceTab from './device-tab.svelte';
 import FileAction from './file-action';
-import en from './locales/en.json';
-import fr from './locales/fr.json';
 import './styles.css';
 
 export default defineModule((host) => {
@@ -19,14 +16,6 @@ export default defineModule((host) => {
   // and from nothing else. The host arrives before any component is mounted,
   // so it is held rather than threaded down.
   holdHost(host);
-
-  // The beta host loads only English and the initial language. Register both
-  // so changing the language in Settings also updates an open queue.
-  const namespace = host.pageHref('print-queue').split('/').at(-2);
-  if (namespace) {
-    registerCatalogue(namespace, 'en', en);
-    registerCatalogue(namespace, 'fr', fr);
-  }
 
   // host.signal fires when the person who signed in leaves. Every request of
   // host.client ends with it. Pass it to a call that takes a signal, and stop

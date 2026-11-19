@@ -1,4 +1,4 @@
-# File d'attente (print-queue): a queue of prints for each printer.
+# Print Queue manages a separate queue for each printer.
 #
 # When a printer reports READY, that is when the plate was cleared and
 # confirmed on the printer, the module sends the next queued file from the
@@ -6,10 +6,10 @@
 
 name: print-queue
 kind: sink
-version: 0.1.14
+version: 0.1.15
 license: MIT
 title: Print Queue
-summary: Queue and schedule prints for each printer. / Mettre en file et programmer des impressions par imprimante.
+summary: Queue and schedule prints for each printer.
 codeowner: tbetton
 contract_major: 1
 openapi: openapi.json
@@ -29,19 +29,19 @@ options:
   - key: poll_seconds
     type: int
     default: "10"
-    summary: Printer polling interval in seconds. / Intervalle de vérification des imprimantes en secondes.
+    summary: Printer polling interval in seconds.
   - key: start_timeout_minutes
     type: int
     default: "30"
-    summary: Print start timeout in minutes. / Délai maximal de démarrage en minutes.
+    summary: Print start timeout in minutes.
   - key: printer_folder
     type: string
     default: "usb"
-    summary: Destination folder on the printer. / Dossier de destination sur l’imprimante.
+    summary: Destination folder on the printer.
   - key: keep_history
     type: int
     default: "20"
-    summary: Finished jobs kept per printer. / Travaux terminés conservés par imprimante.
+    summary: Finished jobs kept per printer.
 
 needs:
   memory_mib: 64
@@ -72,5 +72,5 @@ ui:
         title: Print Queue
     file_action:
       - id: print-queue
-        title: Add to queue / Ajouter à la file
+        title: Add to the print queue
         destructive: false

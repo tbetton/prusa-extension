@@ -1,85 +1,53 @@
-# File d'attente (print-queue) — extension Prusa Connect Local
+# Print Queue for Prusa Connect Local
 
-Une file d'impressions par imprimante. Quand l'imprimante passe **READY** (plateau vidé
-et confirmé sur l'écran), l'extension envoie le fichier suivant depuis le stockage du
-serveur et lance l'impression. Un travail peut être programmé (« pas avant » une heure).
+Print Queue manages a separate queue for each printer. When a printer reports **READY** after you clear the build plate and confirm on the printer, the extension sends the next eligible file from server storage and starts the print. You can also schedule a job to wait until a given time.
 
-- Page « Print Queue » dans la barre latérale (toutes les imprimantes)
-- Onglet « Print Queue » sur la page de chaque imprimante
-- Menu d'un fichier du stockage : « Ajouter à la file d'attente »
-- Monter / descendre, retirer, programmer, remettre en file, suspendre la file
-- File gardée dans `queue.json` (dossier de données du module)
+- Open **Print Queue** in the sidebar to see all printers or open the **Print Queue** tab on a printer's page.
+- Use **Add to the print queue** in the action menu for a file in server storage.
+- Reorder, schedule, remove, or requeue jobs, and hold or resume a printer's queue.
+- See the current print and its progress, including prints started outside the extension.
+- The extension stores the queue in `queue.json` in its data directory.
 
-## Construire et installer
+The extension displays its interface, dates, and error messages in English.
 
-Pour installer la version publiée, ouvre **Settings → Extensions** dans
-Prusa Connect Local et cherche **Print Queue** dans le Marketplace.
+## Build and install
 
-Pour construire depuis les sources (Go 1.26.11, Node 24 et pnpm 11.3.0) :
+To install a published version, open **Settings → Extensions** in Prusa Connect Local and search for **Print Queue** in the Marketplace.
 
-```sh
-git clone --depth 1 --branch sdk/v0.1.0-beta.1 https://github.com/prusa3d/prusa-connect.git .core
-go test -race ./...
-BUILD_ONLY=1 sh install.sh
+Check out the official SDK into `.core/`. Run `BUILD_ONLY=1 sh install.sh` to build the manifest, native binary, and UI bundle into `ui/dist`. Run `UI_ONLY=1 sh install.sh` to build just the UI bundle in the format expected by the [Prusa Marketplace builder](https://plugin-marketplace.prusa3d.com/docs/connect/github-actions).
+
+Run `go vet ./...` and `go test -race ./...` to verify the module.
+
+## Publish to Prusa Marketplace
+
+The **Prusa Marketplace** GitHub workflow runs a dry run after each push to `main`. Publishing a GitHub release with the version declared in `module.yaml`, such as `v0.1.15`, submits it to Prusa for review. Mark the release as a pre-release to use the beta channel. See the [Prusa publishing guide](https://plugin-marketplace.prusa3d.com/docs/connect/github-actions).
+
+## Printer permissions
+
+The `-approve` flag authorizes the permissions declared by the module. To start jobs automatically, an administrator must explicitly grant the extension the operator role on each selected printer.
+
+```text
+POST /api/v1/grants/device/<printer-id>
+{"relation": "operator", "subject": "sink:print-queue"}
 ```
 
-Le SDK officiel est attendu dans `.core/`. `BUILD_ONLY=1 sh install.sh` construit
-le manifeste, le binaire de la plateforme courante et le bundle dans `ui/dist`.
-`UI_ONLY=1 sh install.sh` construit le bundle seul, au format attendu par le
-[builder de Prusa](https://plugin-marketplace.prusa3d.com/docs/connect/github-actions).
+Viewing the queue or history requires permission to observe the printer. Adding or changing a job requires permission to operate that printer. Adding and starting a job from server storage also requires read access to the storage.
 
-Pour vérifier le module, lance `go vet ./...` et `go test -race ./...`.
+When a job starts, Connect rechecks the permissions of the person who queued or requeued it. Approve `check_absent_people` at installation so Connect can check local accounts after a restart. In open mode or with OIDC, Connect may be unable to check a person until it has handled a request from them since startup. The job is then marked as failed, and the person can requeue it after reopening the extension.
 
-## Droit de lancer une impression
+## Print tracking
 
-`-approve` autorise les permissions déclarées par le module. Pour le lancement
-automatique, un administrateur accorde explicitement le rôle d’opérateur au module
-sur chaque imprimante sélectionnée :
+Print Queue tracks transfer and print events from Prusa Connect. When the extension transfers a file from the server, it adds a unique prefix to the filename on the printer to match the transfer with its start command. The source file keeps its name.
 
-    POST /api/v1/grants/device/<id imprimante>
-    {"relation": "operator", "subject": "sink:print-queue"}
+When the result of a start command is uncertain, Print Queue holds that printer's queue. Check the current print and clear the plate if needed before resuming the queue. This also applies to jobs already in progress when upgrading from version 0.1.10, which did not store tracking IDs.
 
-La file et l’historique sont visibles selon le droit d’observer chaque
-imprimante. L’ajout et la modification d’un travail demandent le droit
-d’opérer cette imprimante. Les fichiers du stockage serveur demandent
-également le droit de lecture de ce stockage pour l’ajout et le lancement.
+## Settings
 
-Au démarrage d’un travail, Connect vérifie à nouveau les droits de la personne
-qui l’a mis ou remis en file. Autorise aussi `check_absent_people` lors de
-l’installation pour que Connect puisse vérifier les comptes locaux après un
-redémarrage. En mode ouvert ou avec OIDC, Connect peut ne pas pouvoir vérifier
-une personne dont il n’a pas traité de requête depuis son démarrage. Le travail
-est alors marqué en échec. La personne peut le remettre en file après
-avoir rouvert l’extension.
+Open **Settings → Extensions → Print Queue**.
 
-## Suivi des impressions
-
-Le résultat d’une impression vient des événements de Prusa Connect. Pour un
-fichier transféré depuis le serveur, le nom sur l’imprimante reçoit un préfixe
-unique qui relie le transfert à sa commande de démarrage. Le fichier source
-garde son nom.
-
-Quand le résultat d’un lancement est incertain, la file de cette imprimante
-est suspendue. Vérifie l’impression en cours et retire la pièce si nécessaire
-avant de reprendre la file. Cela s’applique aussi aux travaux déjà en cours
-lors d’une mise à jour depuis la version 0.1.10, qui ne stockait pas les
-identifiants de suivi.
-
-## Réglages (Settings > Extensions > Print Queue)
-
-| clé | défaut | rôle |
+| Key | Default | Purpose |
 |---|---|---|
-| poll_seconds | 10 | fréquence de vérification des imprimantes |
-| start_timeout_minutes | 30 | délai max entre l'envoi et le début d'impression |
-| printer_folder | usb | dossier de destination sur l'imprimante |
-| keep_history | 20 | nombre de travaux terminés gardés par imprimante |
-
-
-## Publication
-
-Le workflow **Prusa Marketplace** effectue un essai à blanc sur chaque push
-sur `main` et à chaque lancement manuel. Une release GitHub publiée avec le tag correspondant à la version du
-manifeste (par exemple `v0.1.14`) soumet le build à Prusa. Une préversion GitHub
-utilise le canal bêta.
-
-[Guide de publication Prusa](https://plugin-marketplace.prusa3d.com/docs/connect/github-actions)
+| `poll_seconds` | 10 | How often the extension checks the printers, in seconds |
+| `start_timeout_minutes` | 30 | Maximum time between dispatch and the start of a print, in minutes |
+| `printer_folder` | usb | Destination folder on the printer |
+| `keep_history` | 20 | Number of finished jobs retained per printer |

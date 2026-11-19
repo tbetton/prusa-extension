@@ -3,14 +3,16 @@
 
   It opens over the right of the page, so the queue stays in sight and shows
   each added job at once. It closes with its cross, Escape, a click beside it
-  or the « Terminé » button. A click on a file adds it, and the panel stays
+  or the “Done” button. A click on a file adds it, and the panel stays
   open to add more.
 -->
 <script lang="ts">
+  import { SOURCE_LOCALE } from '@prusa/connect-ui/i18n';
   import {
     Button,
     Input,
     Sheet,
+    SheetClose,
     SheetContent,
     SheetDescription,
     SheetFooter,
@@ -125,7 +127,10 @@
     if (!next) onclose();
   }}
 >
-  <SheetContent side="right" class="flex w-full flex-col gap-3 sm:max-w-lg!">
+  <SheetContent lang={SOURCE_LOCALE} showCloseButton={false} side="right" class="flex w-full flex-col gap-3 sm:max-w-lg!">
+    <SheetClose aria-label={t('print-queue.pick.close')} class="absolute top-4 right-4 rounded-sm px-1 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">
+      <span aria-hidden="true">×</span>
+    </SheetClose>
     <SheetHeader>
       <SheetTitle>{t('print-queue.pick.title')} · {printerName}</SheetTitle>
       <SheetDescription>{t('print-queue.pick.hint')}</SheetDescription>
