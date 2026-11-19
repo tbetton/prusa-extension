@@ -61,6 +61,7 @@ export const queueErrorText = (error: unknown, t: Translate): string => {
   if (error instanceof QueueError) {
     if (error.code) {
       const code = error.code.slice(error.code.lastIndexOf('/') + 1);
+      if (code === 'PLATE_CHECK_UNAVAILABLE' && error.detail) return error.detail;
       const key = `print-queue.fault.${code}`;
       const message = t(key);
       if (message !== key) return message;

@@ -2,11 +2,22 @@
   "openapi": "3.1.0",
   "info": {
     "title": "print-queue",
-    "version": "0.1.16",
+    "version": "0.1.17",
     "description": "A queue of prints for each printer. Every path is relative to the mount the host assigns."
   },
   "components": {
     "schemas": {
+      "PlateCheck": {
+        "type": "object",
+        "properties": {
+          "automatic": { "type": "boolean" },
+          "reference_at": { "type": "string", "format": "date-time" },
+          "last_match_at": { "type": "string", "format": "date-time" },
+          "status": { "type": "string" },
+          "can_configure": { "type": "boolean" }
+        },
+        "required": ["automatic", "status", "can_configure"]
+      },
       "Job": {
         "type": "object",
         "properties": {
@@ -71,6 +82,40 @@
     }
   },
   "paths": {
+    "/devices/{id}/plate-check": {
+      "post": {
+        "operationId": "update-plate-check",
+        "summary": "Capture an empty plate reference or update automatic readiness",
+        "description": "Requires permission to operate the configured printer. Replacing its reference disables automatic readiness.",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "action": { "type": "string", "enum": ["capture_reference", "set_automatic"] },
+                  "automatic": { "type": "boolean", "description": "Required for set_automatic." }
+                },
+                "required": ["action"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": { "description": "Plate settings saved." },
+          "400": { "description": "Invalid plate action." },
+          "403": { "description": "The caller cannot operate the printer." },
+          "404": { "description": "The printer has no configured plate check." },
+          "409": { "description": "The printer or camera cannot capture a reference, or a reference is required." },
+          "500": { "description": "The plate settings could not be saved." },
+          "503": { "description": "The module is starting." }
+        }
+      }
+    },
     "/jobs": {
       "get": {
         "operationId": "list-jobs",
@@ -103,6 +148,12 @@
                       "type": "object",
                       "additionalProperties": {
                         "type": "boolean"
+                      }
+                    },
+                    "plate_checks": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "$ref": "#/components/schemas/PlateCheck"
                       }
                     },
                     "problem": {

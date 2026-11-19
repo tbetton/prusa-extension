@@ -1,6 +1,6 @@
 # Print Queue for Prusa Connect Local
 
-Print Queue manages a separate queue for each printer. When a printer reports **READY** after you clear the build plate and confirm on the printer, the extension sends the next eligible file from server storage and starts the print. You can also schedule a job to wait until a given time.
+Print Queue manages a separate queue for each printer. When a printer reports **READY**, the extension starts the next eligible job from server storage or the printer's drive. By default you clear the build plate and confirm on the printer. You can schedule a job to wait until a given time.
 
 - Open **Print Queue** in the sidebar to see all printers or open the **Print Queue** tab on a printer's page.
 - Use **Add to the print queue** in the action menu for a file in server storage.
@@ -41,6 +41,17 @@ Print Queue tracks transfer and print events from Prusa Connect. When an event i
 
 When the result of a start command is uncertain, Print Queue marks the job as Unconfirmed and holds that printer's queue. The result updates when Jobs confirms it. Check the printer and clear the plate if needed before resuming the queue.
 
+## Build plate check
+
+1. In **Settings → Extensions → Print Queue**, set `plate_check_printer` to the printer's device ID and `plate_camera_url` to its camera's JPEG snapshot URL on this Prusa Connect Local server. In a default Docker deployment, use `http://127.0.0.1:8080/api/v1/cameras/<camera-id>/snapshot` when the extension and the server share the container.
+2. If the server requires sign-in, give a service account permission to observe the camera and mint an API token with the `read` scope. Put the token on one line in `plate-camera.token` in the extension's data directory beside `queue.json`. Make it readable only by the extension's OS user (mode `0600`). The extension reads it on each request, so you can replace it when it expires.
+3. Clear the plate, park the toolhead where it normally stops after printing, and check the live view. Under **Print Queue → Build plate check**, choose **Capture empty plate reference**. Test the check with automatic starts off. Queue a follow-up file and compare the reported results with what is actually on the plate, including a small object in the camera's view.
+4. To opt in, select **Allow automatic starts after the plate check**. After Prusa Connect records a successful print and the printer reports **FINISHED**, Print Queue looks for two fresh matching pictures at least 30 seconds apart. It then asks the printer to switch to **READY**. It waits for the printer to report **READY** before sending the eligible job. Capturing a replacement reference turns automatic starts off.
+
+Use a fixed camera that sees the entire build plate, with steady lighting and a clear view. The check compares the whole frame and can miss small or hidden objects. It holds if the camera gives stale or identical JPEGs, the view changes, or the queue is paused. It expects snapshots with a `Last-Modified` time at most eight seconds old and supports JPEGs from 320 × 240 up to two megapixels. The reference stays in the extension's data directory.
+
+If the automatic READY request becomes uncertain, hold the queue and check the printer in person. While the queue is held, let Print Queue observe **READY** and then its cancellation before resuming normal operation. Keep each state up for at least one polling interval. Clear the plate before confirming **READY** again.
+
 ## Settings
 
 Open **Settings → Extensions → Print Queue**.
@@ -51,3 +62,5 @@ Open **Settings → Extensions → Print Queue**.
 | `start_timeout_minutes` | 30 | Maximum time between dispatch and the start of a print, in minutes |
 | `printer_folder` | usb | Destination folder on the printer |
 | `keep_history` | 20 | Number of finished jobs retained per printer |
+| `plate_check_printer` | unset | Device ID of the printer to check |
+| `plate_camera_url` | unset | Prusa Connect Local camera snapshot URL on port 80, 443, or 8080 |

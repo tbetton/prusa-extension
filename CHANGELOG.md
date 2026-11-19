@@ -7,6 +7,11 @@ Write the entry in the same change as the code. One bullet per behaviour a
 person outside this repository can observe: a route, a setting, a screen, a
 refusal. Name the route and the setting key, never a function or a file.
 
+## 0.1.17
+
+- Configure a camera with `plate_check_printer` and `plate_camera_url`, then capture an empty build plate reference in Print Queue.
+- Opt in to automatic readiness after a successful print. The next job can start after two fresh captures match the reference at least 30 seconds apart and the printer reports READY.
+
 ## 0.1.16
 
 - Print Queue recovers missing start and end events from the printer's Jobs history, including previously unconfirmed prints.

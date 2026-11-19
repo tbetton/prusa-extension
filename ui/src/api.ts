@@ -28,13 +28,23 @@ export interface Job {
 export interface Queue {
   jobs: Job[];
   paused: Record<string, boolean>;
+  plate_checks?: Record<string, PlateCheck>;
   problem?: string;
+}
+
+export interface PlateCheck {
+  automatic: boolean;
+  reference_at?: string;
+  last_match_at?: string;
+  status: string;
+  can_configure: boolean;
 }
 
 export class QueueError extends Error {
   constructor(
     readonly status: number,
     readonly code: string | undefined,
+    readonly detail?: string,
   ) {
     super(code ?? String(status));
   }
@@ -42,8 +52,12 @@ export class QueueError extends Error {
 
 const refusal = async (response: Response): Promise<QueueError> => {
   try {
-    const problem = (await response.json()) as { code?: unknown } | null;
-    return new QueueError(response.status, typeof problem?.code === 'string' ? problem.code : undefined);
+    const problem = (await response.json()) as { code?: unknown; detail?: unknown } | null;
+    return new QueueError(
+      response.status,
+      typeof problem?.code === 'string' ? problem.code : undefined,
+      typeof problem?.detail === 'string' ? problem.detail : undefined,
+    );
   } catch {
     return new QueueError(response.status, undefined);
   }
@@ -121,6 +135,11 @@ export const clearFinished = (deviceId: string | undefined): Promise<void> =>
 
 export const setPaused = (deviceId: string, paused: boolean): Promise<void> =>
   call('PUT', `/devices/${deviceId}/paused`, { paused });
+
+export const updatePlateCheck = (
+  deviceId: string,
+  settings: { action: 'capture_reference' } | { action: 'set_automatic'; automatic: boolean },
+): Promise<void> => call('POST', `/devices/${encodeURIComponent(deviceId)}/plate-check`, settings);
 
 /**
  * The address of a file's picture: from the server's storage, or from the

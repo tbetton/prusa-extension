@@ -27,6 +27,7 @@
     scheduleJob,
     setPaused,
     thumbnailUrl,
+    updatePlateCheck,
     type Job,
     type Queue,
   } from './api';
@@ -401,6 +402,7 @@
         {@const slots = slotsOf(printer)}
         {@const jobs = slots.map((slot) => slot.job)}
         {@const paused = queue?.paused[printer] === true}
+        {@const plate = queue?.plate_checks?.[printer]}
         {@const factor = factors[printer] ?? 1}
         <Card>
           <CardHeader>
@@ -428,8 +430,61 @@
             </div>
             {#if paused}
               <p class="text-sm text-warning">{t('print-queue.pausedHint')}</p>
+            {:else if plate?.automatic}
+              <p class="text-xs text-muted-foreground">{t('print-queue.plate.autoHint')}</p>
             {:else}
               <p class="text-xs text-muted-foreground">{t('print-queue.readyHint')}</p>
+            {/if}
+            {#if plate}
+              <details class="text-sm">
+                <summary class="cursor-pointer">
+                  {t('print-queue.plate.title')} · {t(`print-queue.plate.status.${plate.status}`)}
+                </summary>
+                <div class="mt-2 flex flex-col items-start gap-2">
+                  {#if plate.reference_at}
+                    <p class="text-xs text-muted-foreground">
+                      {t('print-queue.plate.referenceAt', {
+                        at: formatDate(plate.reference_at, { dateStyle: 'short', timeStyle: 'short' }),
+                      })}
+                    </p>
+                  {/if}
+                  {#if plate.last_match_at}
+                    <p class="text-xs text-muted-foreground">
+                      {t('print-queue.plate.lastMatchAt', {
+                        at: formatDate(plate.last_match_at, { dateStyle: 'short', timeStyle: 'short' }),
+                      })}
+                    </p>
+                  {/if}
+                  {#if plate.status === 'readyBlocked'}
+                    <p class="text-xs text-warning">{t('print-queue.plate.recover')}</p>
+                  {/if}
+                  {#if plate.can_configure}
+                    <p class="text-xs text-muted-foreground">{t('print-queue.plate.captureHint')}</p>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={busy}
+                      onclick={() => act(() => updatePlateCheck(printer, { action: 'capture_reference' }))}
+                    >
+                      {t('print-queue.plate.capture')}
+                    </Button>
+                    <label class="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={plate.automatic}
+                        disabled={busy || !plate.reference_at}
+                        onchange={(event) => {
+                          const automatic = event.currentTarget.checked;
+                          event.currentTarget.checked = plate.automatic;
+                          void act(() => updatePlateCheck(printer, { action: 'set_automatic', automatic }));
+                        }}
+                      />
+                      {t('print-queue.plate.automatic')}
+                    </label>
+                    <p class="text-xs text-muted-foreground">{t('print-queue.plate.limit')}</p>
+                  {/if}
+                </div>
+              </details>
             {/if}
           </CardHeader>
           <CardContent>

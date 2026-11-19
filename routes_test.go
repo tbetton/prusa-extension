@@ -108,3 +108,59 @@ func TestClearFinishedOnlyTouchesAuthorizedPrinters(t *testing.T) {
 		t.Fatalf("clear returned %d, authorized job remains: %t, hidden job remains: %t", w.Code, visible, hiddenRemains)
 	}
 }
+
+func TestPlateSettingsRequireAnOperatorAndSurviveRestart(t *testing.T) {
+	store, _, sc, clock := setup(t, "IDLE")
+	dir := filepath.Dir(store.file)
+	settings := Settings{PlatePrinter: "p1", PlateCameraURL: "http://127.0.0.1:8080/api/v1/cameras/p1/snapshot"}
+	p, err := openPlateCheck(dir, settings, clock.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	img := platePhoto(45, false)
+	jpg := encodeTestJPEG(t, img)
+	p.snapshot = func(context.Context) (plateFrame, error) {
+		return plateFrame{jpeg: jpg, image: img, taken: clock.at}, nil
+	}
+	sc.plate = p
+	routes := (&module{store: store, access: queueAccess{}, scheduler: sc}).routes()
+	const enable = `{"action":"set_automatic","automatic":true}`
+	const capture = `{"action":"capture_reference"}`
+	for _, step := range []struct {
+		principal, body string
+		want            int
+		automatic       bool
+	}{
+		{"user:viewer", capture, http.StatusForbidden, false},
+		{"user:operator", enable, http.StatusConflict, false},
+		{"user:operator", capture, http.StatusNoContent, false},
+		{"user:operator", enable, http.StatusNoContent, true},
+		{"user:viewer", `{"action":"set_automatic","automatic":false}`, http.StatusForbidden, true},
+		{"user:operator", capture, http.StatusNoContent, false},
+	} {
+		req, err := (routesapi.Request{
+			Method: http.MethodPost, Path: "/devices/p1/plate-check", Principal: step.principal, Body: []byte(step.body),
+		}).HTTP(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := httptest.NewRecorder()
+		routes.ServeHTTP(r, req)
+		if r.Code != step.want {
+			t.Fatalf("%s %s returned %d, want %d: %s", step.principal, step.body, r.Code, step.want, r.Body)
+		}
+		reloaded, err := openPlateCheck(dir, settings, clock.now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if (reloaded.settings.EnabledBy != "") != step.automatic ||
+			(reloaded.reference != nil) != (p.reference != nil) {
+			t.Fatalf("saved plate settings are wrong after %s", step.body)
+		}
+	}
+	settings.PlateCameraURL = "http://127.0.0.1:8080/api/v1/cameras/different/snapshot"
+	reloaded, err := openPlateCheck(dir, settings, clock.now)
+	if err != nil || reloaded.reference != nil || reloaded.settings.EnabledBy != "" {
+		t.Fatalf("changing camera must invalidate the reference: %v", err)
+	}
+}
