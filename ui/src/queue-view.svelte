@@ -9,9 +9,6 @@
     CardContent,
     CardHeader,
     CardTitle,
-    Collapsible,
-    CollapsibleContent,
-    CollapsibleTrigger,
     ConfirmDialog,
     EmptyState,
     Tabs,
@@ -32,7 +29,6 @@
     scheduleJob,
     setPaused,
     thumbnailUrl,
-    updatePlateCheck,
     type Job,
     type Queue,
   } from './api';
@@ -454,6 +450,9 @@
                 {#if plate?.automatic}
                   <Badge variant="info">{t('print-queue.plate.autoBadge')}</Badge>
                 {/if}
+                {#if plate?.status === 'readyBlocked'}
+                  <Badge variant="warning">{t('print-queue.plate.status.readyBlocked')}</Badge>
+                {/if}
                 {#if paused}
                   <Badge variant="warning">{t('print-queue.queueHeld')}</Badge>
                 {/if}
@@ -490,57 +489,6 @@
             {/if}
             {#if paused}
               <p class="text-sm text-warning">{t('print-queue.pausedHint')}</p>
-            {/if}
-            {#if plate}
-              <Collapsible class="text-sm">
-                <CollapsibleTrigger variant="inline">
-                  {t('print-queue.plate.title')} · {t(`print-queue.plate.status.${plate.status}`)}
-                </CollapsibleTrigger>
-                <CollapsibleContent class="mt-2 flex flex-col items-start gap-2">
-                  {#if plate.reference_at}
-                    <p class="text-xs text-muted-foreground">
-                      {t('print-queue.plate.referenceAt', {
-                        at: formatDate(plate.reference_at, { dateStyle: 'short', timeStyle: 'short' }),
-                      })}
-                    </p>
-                  {/if}
-                  {#if plate.last_match_at}
-                    <p class="text-xs text-muted-foreground">
-                      {t('print-queue.plate.lastMatchAt', {
-                        at: formatDate(plate.last_match_at, { dateStyle: 'short', timeStyle: 'short' }),
-                      })}
-                    </p>
-                  {/if}
-                  {#if plate.status === 'readyBlocked'}
-                    <p class="text-xs text-warning">{t('print-queue.plate.recover')}</p>
-                  {/if}
-                  {#if plate.can_configure}
-                    <p class="text-xs text-muted-foreground">{t('print-queue.plate.captureHint')}</p>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      disabled={busy}
-                      onclick={() => act(() => updatePlateCheck(printer, { action: 'capture_reference' }))}
-                    >
-                      {t('print-queue.plate.capture')}
-                    </Button>
-                    <label class="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={plate.automatic}
-                        disabled={busy || !plate.reference_at}
-                        onchange={(event) => {
-                          const automatic = event.currentTarget.checked;
-                          event.currentTarget.checked = plate.automatic;
-                          void act(() => updatePlateCheck(printer, { action: 'set_automatic', automatic }));
-                        }}
-                      />
-                      {t('print-queue.plate.automatic')}
-                    </label>
-                    <p class="text-xs text-muted-foreground">{t('print-queue.plate.limit')}</p>
-                  {/if}
-                </CollapsibleContent>
-              </Collapsible>
             {/if}
           </CardHeader>
           <CardContent>

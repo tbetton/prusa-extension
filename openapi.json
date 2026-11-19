@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "print-queue",
-    "version": "0.1.24",
+    "version": "0.1.25",
     "description": "A queue of prints for each printer. Every path is relative to the mount the host assigns."
   },
   "components": {

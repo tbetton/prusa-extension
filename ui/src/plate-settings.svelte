@@ -20,6 +20,7 @@
 
   import { moduleNamespace } from './api';
   import { heldHost } from './host';
+  import PlateReference from './plate-reference.svelte';
 
   const host = heldHost();
   const { fleet, signal, t } = host;
@@ -310,6 +311,14 @@
         {t('print-queue.setup.locked')}
       </p>
     {/if}
+    {#if typeof instance.config.plate_check_printer === 'string' && instance.config.plate_check_printer}
+      {#key instance.config.plate_check_printer}
+        <PlateReference
+          printer={instance.config.plate_check_printer}
+          enabled={false}
+        />
+      {/key}
+    {/if}
   {:else if !fleet.loaded && !fleet.error}
     <p class="text-sm text-muted-foreground">
       {t('print-queue.setup.loading')}
@@ -472,6 +481,11 @@
     {/if}
     {#if saved}
       <p role="status" class="text-sm">{t('print-queue.setup.saved')}</p>
+    {/if}
+    {#if printer && configured}
+      {#key printer}
+        <PlateReference {printer} />
+      {/key}
     {/if}
   {/if}
   {#if error}

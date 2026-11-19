@@ -6,7 +6,7 @@
 
 name: print-queue
 kind: sink
-version: 0.1.24
+version: 0.1.25
 license: MIT
 title: Print Queue
 summary: Queue and schedule prints for each printer.

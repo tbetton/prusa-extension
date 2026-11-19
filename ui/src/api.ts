@@ -144,7 +144,8 @@ export const markPrinterReady = (deviceId: string): Promise<void> =>
 export const updatePlateCheck = (
   deviceId: string,
   settings: { action: 'capture_reference' } | { action: 'set_automatic'; automatic: boolean },
-): Promise<void> => call('POST', `/devices/${encodeURIComponent(deviceId)}/plate-check`, settings);
+  signal?: AbortSignal,
+): Promise<void> => call('POST', `/devices/${encodeURIComponent(deviceId)}/plate-check`, settings, signal);
 
 /**
  * The address of a file's picture: from the server's storage, or from the

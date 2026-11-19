@@ -7,6 +7,10 @@ Write the entry in the same change as the code. One bullet per behaviour a
 person outside this repository can observe: a route, a setting, a screen, a
 refusal. Name the route and the setting key, never a function or a file.
 
+## 0.1.25
+
+- Capture the plate reference, review check status, and enable automatic starts in the **Build plate check** settings tab.
+
 ## 0.1.24
 
 - Turn the camera check on or off directly from the **Build plate check** tab.
