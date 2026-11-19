@@ -7,6 +7,11 @@ Write the entry in the same change as the code. One bullet per behaviour a
 person outside this repository can observe: a route, a setting, a screen, a
 refusal. Name the route and the setting key, never a function or a file.
 
+## 0.1.24
+
+- Turn the camera check on or off directly from the **Build plate check** tab.
+- Show an **Automatic start** badge when enabled, keep **Mark as ready** visible during printing, and group job details and actions for narrow screens.
+
 ## 0.1.23
 
 - Keep **Mark as ready** visible for operators and show why it is disabled while the printer is busy or unavailable.

@@ -14,6 +14,8 @@
     SelectItem,
     SelectTrigger,
     SelectValue,
+    SettingsRow,
+    Switch,
   } from '@prusa/connect-ui/primitives';
 
   import { moduleNamespace } from './api';
@@ -124,6 +126,37 @@
     saved = false;
   };
 
+  const writeConfig = (
+    current: Instance,
+    values: Record<string, unknown>,
+  ): Promise<Instance> =>
+    client.putResource(
+      {
+        path: { kind: 'sink', name: current.name },
+        header: { 'If-Match': `"${current.version}"` },
+        body: {
+          type: current.type,
+          enabled: current.enabled,
+          required: current.required,
+          config: { ...current.config, ...values },
+          hidden_contributions: current.hidden_contributions ?? [],
+          memory_mib: current.memory_mib ?? 0,
+          on_over_memory: current.on_over_memory ?? 'stop',
+          ...(current.switch_off === undefined
+            ? {}
+            : { switch_off: current.switch_off }),
+        },
+      },
+      signal,
+    );
+
+  const writeError = (cause: unknown, fallback: string): void => {
+    if (signal.aborted) return;
+    error = fallback;
+    if (cause instanceof ApiError && cause.status === 412) error = 'conflict';
+    if (cause instanceof ApiError && cause.status === 403) error = 'forbidden';
+  };
+
   const load = async (): Promise<void> => {
     loading = true;
     error = '';
@@ -177,6 +210,21 @@
     }
   };
 
+  const setCheckEnabled = async (enabled: boolean): Promise<void> => {
+    if (!instance || saving || instance.source === 'file') return;
+    saving = true;
+    error = '';
+    saved = false;
+    try {
+      instance = await writeConfig(instance, { plate_check_enabled: enabled });
+      if (enabled && !signal.aborted) await load();
+    } catch (cause) {
+      writeError(cause, 'toggleFailed');
+    } finally {
+      saving = false;
+    }
+  };
+
   const save = async (): Promise<void> => {
     if (
       !instance ||
@@ -206,30 +254,11 @@
         }
       }
       writing = true;
-      instance = await client.putResource(
-        {
-          path: { kind: 'sink', name: current.name },
-          header: { 'If-Match': `"${current.version}"` },
-          body: {
-            type: current.type,
-            enabled: current.enabled,
-            required: current.required,
-            config: {
-              ...current.config,
-              plate_check_printer: printer,
-              plate_camera_url: target,
-              ...(issued ? { plate_camera_token: issued.token } : {}),
-            },
-            hidden_contributions: current.hidden_contributions ?? [],
-            memory_mib: current.memory_mib ?? 0,
-            on_over_memory: current.on_over_memory ?? 'stop',
-            ...(current.switch_off === undefined
-              ? {}
-              : { switch_off: current.switch_off }),
-          },
-        },
-        signal,
-      );
+      instance = await writeConfig(current, {
+        plate_check_printer: printer,
+        plate_camera_url: target,
+        ...(issued ? { plate_camera_token: issued.token } : {}),
+      });
       saved = true;
       replaceSnapshotURL = false;
       updateLoopback = false;
@@ -245,11 +274,7 @@
           .revokeCredential({ path: { credential: issued.id } }, signal)
           .catch(() => undefined);
       }
-      if (signal.aborted) return;
-      error = writing ? 'saveFailed' : 'connectionFailed';
-      if (cause instanceof ApiError && cause.status === 412) error = 'conflict';
-      if (cause instanceof ApiError && cause.status === 403)
-        error = 'forbidden';
+      writeError(cause, writing ? 'saveFailed' : 'connectionFailed');
     } finally {
       saving = false;
     }
@@ -259,13 +284,35 @@
 </script>
 
 <div class="flex max-w-xl flex-col gap-4">
-  {#if loading || (!fleet.loaded && !fleet.error)}
+  {#if instance}
+    {@const current = instance}
+    <SettingsRow label={t('print-queue.setup.enableCheck')}>
+      {#snippet control()}
+        <Switch
+          aria-label={t('print-queue.setup.enableCheck')}
+          checked={current.config.plate_check_enabled !== false}
+          disabled={loading ||
+            saving ||
+            error === 'conflict' ||
+            current.source === 'file'}
+          onCheckedChange={(enabled) => void setCheckEnabled(enabled)}
+        />
+      {/snippet}
+    </SettingsRow>
+  {/if}
+  {#if loading}
     <p class="text-sm text-muted-foreground">
       {t('print-queue.setup.loading')}
     </p>
   {:else if instance?.config.plate_check_enabled === false}
+    {#if instance.source === 'file'}
+      <p class="text-sm text-muted-foreground">
+        {t('print-queue.setup.locked')}
+      </p>
+    {/if}
+  {:else if !fleet.loaded && !fleet.error}
     <p class="text-sm text-muted-foreground">
-      {t('print-queue.setup.disabled')}
+      {t('print-queue.setup.loading')}
     </p>
   {:else if instance}
     {#if replaceSnapshotURL}

@@ -44,7 +44,7 @@ When the result of a start command is uncertain, Print Queue marks the job as Un
 
 ## Build plate check
 
-Turn off `plate_check_enabled` in **Settings → Extensions → Print Queue → Settings** to stop camera checks. The saved reference and automatic readiness preference are restored when the check is enabled again. **Mark as ready** remains available when the camera check is off.
+Turn **Enable build plate check** on or off in **Settings → Extensions → Print Queue → Build plate check**. The saved reference and automatic readiness preference are restored when the check is enabled again. **Mark as ready** remains available when the camera check is off.
 
 1. Open **Settings → Extensions → Print Queue → Build plate check**. Choose the printer and camera, check the preview, and click **Connect camera**. A sole printer or camera is selected automatically. When Prusa Connect requires sign-in, this button creates a read-only credential from your current session and saves it for background checks. If access expires or is revoked, use **Reconnect camera** from the same tab.
 2. Clear the plate, park the toolhead where it normally stops after printing, and check the live view. Under **Print Queue → Build plate check**, choose **Capture empty plate reference**. Test the check with automatic starts off. Queue a follow-up file and compare the reported results with what is actually on the plate, including a small object in the camera's view.
