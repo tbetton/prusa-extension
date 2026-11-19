@@ -9,6 +9,7 @@ import { holdHost } from './host';
 import Page from './page.svelte';
 import DeviceTab from './device-tab.svelte';
 import FileAction from './file-action';
+import PlateSettings from './plate-settings.svelte';
 import './styles.css';
 
 export default defineModule((host) => {
@@ -32,4 +33,5 @@ export default defineModule((host) => {
   host.register.page('print-queue', Page);
   host.register.deviceTab('print-queue', DeviceTab);
   host.register.fileAction('print-queue', FileAction);
+  host.register.settings('plate-check', PlateSettings);
 });

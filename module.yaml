@@ -6,7 +6,7 @@
 
 name: print-queue
 kind: sink
-version: 0.1.17
+version: 0.1.18
 license: MIT
 title: Print Queue
 summary: Queue and schedule prints for each printer.
@@ -79,6 +79,9 @@ ui:
   entry: ui/index.js
   library: ">=0.1.0 <1.0.0"
   contributes:
+    settings:
+      - id: plate-check
+        title: Build plate check
     pages:
       - path: print-queue
         title: Print Queue

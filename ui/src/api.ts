@@ -7,6 +7,8 @@ const BASE = (() => {
   return match?.[1] ?? '/api/v1/modules/com.github.aux.tbetton.print-queue';
 })();
 
+export const moduleNamespace = decodeURIComponent(BASE.slice(BASE.lastIndexOf('/') + 1));
+
 export interface Job {
   id: string;
   device_id: string;
