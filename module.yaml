@@ -1,0 +1,76 @@
+# File d'attente (print-queue): a queue of prints for each printer.
+#
+# When a printer reports READY, that is when the plate was cleared and
+# confirmed on the printer, the module sends the next queued file from the
+# server's storage and starts it. A job can wait for a given time.
+
+name: print-queue
+kind: sink
+version: 0.1.14
+license: MIT
+title: Print Queue
+summary: Queue and schedule prints for each printer. / Mettre en file et programmer des impressions par imprimante.
+codeowner: tbetton
+contract_major: 1
+openapi: openapi.json
+platforms:
+  - linux_amd64
+  - linux_arm64
+
+require:
+  core: ">=0.1.0-beta.1"
+  core-access.check: "*"
+  core-bus.subscribe: "*"
+  core-device.get: "*"
+  core-device.print: "*"
+  core-storage.stat: "*"
+
+options:
+  - key: poll_seconds
+    type: int
+    default: "10"
+    summary: Printer polling interval in seconds. / Intervalle de vérification des imprimantes en secondes.
+  - key: start_timeout_minutes
+    type: int
+    default: "30"
+    summary: Print start timeout in minutes. / Délai maximal de démarrage en minutes.
+  - key: printer_folder
+    type: string
+    default: "usb"
+    summary: Destination folder on the printer. / Dossier de destination sur l’imprimante.
+  - key: keep_history
+    type: int
+    default: "20"
+    summary: Finished jobs kept per printer. / Travaux terminés conservés par imprimante.
+
+needs:
+  memory_mib: 64
+  # queue.json is kept here, so the queue survives a restart.
+  data: true
+
+# Delayed jobs must be able to recheck a local account after a restart.
+check_absent_people: true
+
+permissions:
+  # Read the printers, to see when one is READY and when a print ends.
+  - observe
+  # Start a print on a printer, as the queue and not as a person.
+  - operate
+  # Read the queued file out of the server's storage to send it.
+  - read_storage
+
+ui:
+  entry: ui/index.js
+  library: ">=0.1.0 <1.0.0"
+  contributes:
+    pages:
+      - path: print-queue
+        title: Print Queue
+        icon: clipboard-list
+    device_tab:
+      - id: print-queue
+        title: Print Queue
+    file_action:
+      - id: print-queue
+        title: Add to queue / Ajouter à la file
+        destructive: false

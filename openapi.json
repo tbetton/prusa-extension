@@ -1,0 +1,507 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "print-queue",
+    "version": "0.1.14",
+    "description": "A queue of prints for each printer. Every path is relative to the mount the host assigns."
+  },
+  "components": {
+    "schemas": {
+      "Job": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "device_id": {
+            "type": "string"
+          },
+          "storage": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "added_by": {
+            "type": "string"
+          },
+          "added_at": {
+            "type": "string"
+          },
+          "not_before": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "detail_code": {
+            "type": "string",
+            "description": "Stable code for a queue status detail. The UI translates it into the current language."
+          },
+          "printer_path": {
+            "type": "string"
+          },
+          "print_id": {
+            "type": "string",
+            "description": "The Prusa Connect job ID once the printer has started printing."
+          },
+          "started_at": {
+            "type": "string"
+          },
+          "ended_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "device_id",
+          "storage",
+          "path",
+          "name",
+          "added_at",
+          "status"
+        ]
+      }
+    }
+  },
+  "paths": {
+    "/jobs": {
+      "get": {
+        "operationId": "list-jobs",
+        "summary": "The jobs of one printer, or of all",
+        "parameters": [
+          {
+            "name": "device",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The queue in order.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "jobs": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Job"
+                      }
+                    },
+                    "paused": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "boolean"
+                      }
+                    },
+                    "problem": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "jobs",
+                    "paused"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A refusal, as RFC 9457 frames it.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested printer is missing or not visible to the caller."
+          }
+        },
+        "description": "Lists jobs and paused queues for printers the caller may observe."
+      },
+      "post": {
+        "operationId": "add-job",
+        "summary": "Add a file of the server's storage to a printer's queue",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "device_id": {
+                    "type": "string"
+                  },
+                  "storage": {
+                    "type": "string",
+                    "description": "Empty for a file the printer already holds."
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "not_before": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "device_id",
+                  "path"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The job.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A refusal, as RFC 9457 frames it.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "A refusal, as RFC 9457 frames it.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is missing a required permission."
+          }
+        },
+        "description": "Add a file of the server's storage to a printer's queue. The host authorizes the caller on this module before the route is called."
+      }
+    },
+    "/jobs/{id}": {
+      "delete": {
+        "operationId": "remove-job",
+        "summary": "Take a job out of the queue",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Done."
+          },
+          "404": {
+            "description": "A refusal, as RFC 9457 frames it.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A refusal, as RFC 9457 frames it.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is missing a required permission."
+          }
+        },
+        "description": "Take a job out of the queue. The host authorizes the caller on this module before the route is called."
+      }
+    },
+    "/jobs/{id}/move": {
+      "post": {
+        "operationId": "move-job",
+        "summary": "Move a job up or down its queue",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "direction": {
+                    "type": "string",
+                    "enum": [
+                      "up",
+                      "down"
+                    ]
+                  }
+                },
+                "required": [
+                  "direction"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Done."
+          },
+          "404": {
+            "description": "A refusal, as RFC 9457 frames it.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A refusal, as RFC 9457 frames it.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is missing a required permission."
+          }
+        },
+        "description": "Move a job up or down its queue. The host authorizes the caller on this module before the route is called."
+      }
+    },
+    "/jobs/{id}/schedule": {
+      "put": {
+        "operationId": "schedule-job",
+        "summary": "Set or clear the time a job may start at",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "not_before": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date-time"
+                  }
+                },
+                "required": []
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Done."
+          },
+          "404": {
+            "description": "A refusal, as RFC 9457 frames it.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A refusal, as RFC 9457 frames it.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is missing a required permission."
+          }
+        },
+        "description": "Set or clear the time a job may start at. The host authorizes the caller on this module before the route is called."
+      }
+    },
+    "/jobs/{id}/requeue": {
+      "post": {
+        "operationId": "requeue-job",
+        "summary": "Put an ended job back at the end of the queue",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Done."
+          },
+          "404": {
+            "description": "A refusal, as RFC 9457 frames it.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A refusal, as RFC 9457 frames it.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is missing a required permission."
+          }
+        },
+        "description": "Put an ended job back at the end of the queue. The host authorizes the caller on this module before the route is called."
+      }
+    },
+    "/jobs/clear-finished": {
+      "post": {
+        "operationId": "clear-finished",
+        "summary": "Drop the ended jobs of one printer, or of all",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "device_id": {
+                    "type": "string"
+                  }
+                },
+                "required": []
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Done."
+          },
+          "403": {
+            "description": "The caller is missing a required permission."
+          }
+        },
+        "description": "Clears ended jobs for the selected printer or, when none is selected, for printers the caller may operate."
+      }
+    },
+    "/devices/{id}/paused": {
+      "put": {
+        "operationId": "pause-queue",
+        "summary": "Hold a printer's queue, or let it run",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "paused": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "paused"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Done."
+          },
+          "403": {
+            "description": "The caller is missing a required permission."
+          }
+        },
+        "description": "Hold a printer's queue, or let it run. The host authorizes the caller on this module before the route is called."
+      }
+    }
+  }
+}
