@@ -160,13 +160,21 @@
 
   const nameOf = (id: string): string => fleet.device(id)?.name ?? id;
 
-  const canMarkReady = (id: string): boolean => {
+  const manualReadiness = (id: string): 'available' | 'printing' | 'offline' | 'ready' | 'unavailable' | undefined => {
     const device = fleet.device(id);
-    const state = device?.state['/state'];
-    return device?.connected === true &&
-      device.actions?.includes('operate') === true &&
-      device.capabilities?.includes('core.command.set_printer_ready') === true &&
-      (state === 'IDLE' || state === 'FINISHED' || state === 'STOPPED');
+    if (device?.actions?.includes('operate') !== true) return undefined;
+    if (!device.connected) return 'offline';
+    const state = device.state['/state'];
+    if (device.job?.running || currentPrints[id] || state === 'PRINTING' || state === 'PAUSED' ||
+      jobsOf(id).some((job) => job.status === 'starting' || job.status === 'printing')) {
+      return 'printing';
+    }
+    if (state === 'READY') return 'ready';
+    if (device.capabilities?.includes('core.command.set_printer_ready') !== true ||
+      (state !== 'IDLE' && state !== 'FINISHED' && state !== 'STOPPED')) {
+      return 'unavailable';
+    }
+    return 'available';
   };
 
   const stateOf = (id: string): string => {
@@ -416,6 +424,7 @@
         {@const paused = queue?.paused[printer] === true}
         {@const plate = queue?.plate_checks?.[printer]}
         {@const factor = factors[printer] ?? 1}
+        {@const readiness = manualReadiness(printer)}
         <Card>
           <CardHeader>
             <div class="flex flex-wrap items-center justify-between gap-2">
@@ -426,9 +435,15 @@
                   {stateOf(printer) || '—'}
                 </span>
               </CardTitle>
-              <div class="flex gap-2">
-                {#if canMarkReady(printer)}
-                  <Button size="sm" variant="secondary" disabled={busy} onclick={() => (markingReady = printer)}>
+              <div class="flex flex-wrap gap-2">
+                {#if readiness !== undefined}
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={busy || readiness !== 'available'}
+                    aria-describedby={readiness === 'available' ? undefined : `ready-status-${printer}`}
+                    onclick={() => (markingReady = printer)}
+                  >
                     {t('print-queue.markReady.button')}
                   </Button>
                 {/if}
@@ -445,6 +460,11 @@
                 </Button>
               </div>
             </div>
+            {#if readiness && readiness !== 'available'}
+              <p class="text-xs text-muted-foreground" id={`ready-status-${printer}`}>
+                {t(`print-queue.markReady.status.${readiness}`)}
+              </p>
+            {/if}
             {#if paused}
               <p class="text-sm text-warning">{t('print-queue.pausedHint')}</p>
             {:else if plate?.automatic}
@@ -584,10 +604,13 @@
     title={t('print-queue.markReady.title', { printer: markingReady ? nameOf(markingReady) : '' })}
     description={t('print-queue.markReady.confirm')}
     confirmLabel={t('print-queue.markReady.button')}
+    confirmDisabled={busy || markingReady === undefined || manualReadiness(markingReady) !== 'available'}
     onConfirm={() => {
       const printer = markingReady;
       markingReady = undefined;
-      if (printer !== undefined) void act(() => markPrinterReady(printer));
+      if (printer !== undefined && manualReadiness(printer) === 'available') {
+        void act(() => markPrinterReady(printer));
+      }
     }}
   />
 </div>
