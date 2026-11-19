@@ -473,6 +473,7 @@ type Scheduler struct {
 	folder       string
 	logf         func(format string, args ...any)
 	authorize    func(context.Context, Job) error
+	command      func(context.Context, deviceapi.CommandParams) (deviceapi.Result, error)
 	plate        *plateCheck
 	mu           sync.Mutex // orders dispatch and stream windows
 	following    bool

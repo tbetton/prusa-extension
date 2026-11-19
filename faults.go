@@ -86,6 +86,13 @@ var (
 		fault.ShowDetail,
 	))
 
+	ReadyUnavailable = fault.Register(faultDomain, "READY_UNAVAILABLE", http.StatusConflict, fault.Document(
+		"The printer could not be marked ready",
+		"Check the printer state and try again.",
+		fault.RetryAllowed,
+		fault.ShowDetail,
+	))
+
 	// StoreFailed is a queue the module could not save.
 	StoreFailed = fault.Register(faultDomain, "STORE_FAILED", http.StatusInternalServerError, fault.Document(
 		"The queue could not be saved",

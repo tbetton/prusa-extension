@@ -9,6 +9,7 @@
     CardContent,
     CardHeader,
     CardTitle,
+    ConfirmDialog,
     EmptyState,
     Tabs,
     TabsContent,
@@ -21,6 +22,7 @@
     clearFinished,
     listHistory,
     listJobs,
+    markPrinterReady,
     moveJob,
     removeJob,
     requeueJob,
@@ -62,6 +64,7 @@
   let editValue = $state('');
   let busy = $state(false);
   let picking = $state<string | undefined>(undefined);
+  let markingReady = $state<string | undefined>(undefined);
   let tab = $state('active');
   let now = $state(Date.now());
   /** Real / slicer duration ratio, per printer. */
@@ -156,6 +159,15 @@
   const jobsOf = (id: string): Job[] => (queue?.jobs ?? []).filter((job) => job.device_id === id);
 
   const nameOf = (id: string): string => fleet.device(id)?.name ?? id;
+
+  const canMarkReady = (id: string): boolean => {
+    const device = fleet.device(id);
+    const state = device?.state['/state'];
+    return device?.connected === true &&
+      device.actions?.includes('operate') === true &&
+      device.capabilities?.includes('core.command.set_printer_ready') === true &&
+      (state === 'IDLE' || state === 'FINISHED' || state === 'STOPPED');
+  };
 
   const stateOf = (id: string): string => {
     const state = fleet.device(id)?.state as Record<string, unknown> | undefined;
@@ -415,6 +427,11 @@
                 </span>
               </CardTitle>
               <div class="flex gap-2">
+                {#if canMarkReady(printer)}
+                  <Button size="sm" variant="secondary" disabled={busy} onclick={() => (markingReady = printer)}>
+                    {t('print-queue.markReady.button')}
+                  </Button>
+                {/if}
                 <Button size="sm" onclick={() => (picking = printer)}>
                   + {t('print-queue.pick.open')}
                 </Button>
@@ -558,4 +575,19 @@
       />
     {/key}
   {/if}
+  <ConfirmDialog
+    open={markingReady !== undefined}
+    onOpenChange={(open) => {
+      if (!open) markingReady = undefined;
+    }}
+    variant="confirm"
+    title={t('print-queue.markReady.title', { printer: markingReady ? nameOf(markingReady) : '' })}
+    description={t('print-queue.markReady.confirm')}
+    confirmLabel={t('print-queue.markReady.button')}
+    onConfirm={() => {
+      const printer = markingReady;
+      markingReady = undefined;
+      if (printer !== undefined) void act(() => markPrinterReady(printer));
+    }}
+  />
 </div>

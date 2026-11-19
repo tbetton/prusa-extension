@@ -172,7 +172,7 @@ func TestPlateReadyCannotAuthorizeAnotherJobOrSurviveRestart(t *testing.T) {
 			store, fleet, sc, clock := setup(t, "FINISHED")
 			_, _ = configurePlateFixture(t, fleet, sc, clock, true)
 			if scenario == "lost reply" {
-				sc.plate.command = func(context.Context, deviceapi.CommandParams) (deviceapi.Result, error) {
+				sc.command = func(context.Context, deviceapi.CommandParams) (deviceapi.Result, error) {
 					return deviceapi.Result{}, context.DeadlineExceeded
 				}
 			}
@@ -229,13 +229,13 @@ func configurePlateFixture(t *testing.T, fleet *fakeFleet, sc *Scheduler, clock 
 			jpg := encodeTestJPEG(t, img)
 			return plateFrame{image: img, taken: clock.at, sum: sha256.Sum256(jpg)}, nil
 		},
-		command: func(_ context.Context, p deviceapi.CommandParams) (deviceapi.Result, error) {
-			if p.ID != "p1" || p.Verb != readyVerb {
-				t.Fatalf("unexpected command: %+v", p)
-			}
-			*commands += 1
-			return deviceapi.Result{OK: true}, nil
-		},
+	}
+	sc.command = func(_ context.Context, p deviceapi.CommandParams) (deviceapi.Result, error) {
+		if p.ID != "p1" || p.Verb != readyVerb {
+			t.Fatalf("unexpected command: %+v", p)
+		}
+		*commands += 1
+		return deviceapi.Result{OK: true}, nil
 	}
 	if automatic {
 		sc.plate.settings.EnabledBy = "user:operator"

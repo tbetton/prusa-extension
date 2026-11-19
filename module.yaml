@@ -6,7 +6,7 @@
 
 name: print-queue
 kind: sink
-version: 0.1.21
+version: 0.1.22
 license: MIT
 title: Print Queue
 summary: Queue and schedule prints for each printer.
@@ -45,6 +45,10 @@ options:
     type: int
     default: "20"
     summary: Finished jobs kept per printer.
+  - key: plate_check_enabled
+    type: bool
+    default: "true"
+    summary: Enable the camera-based build plate check.
   - key: plate_check_printer
     type: string
     summary: Device ID of the printer covered by the optional plate check.

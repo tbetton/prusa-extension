@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "print-queue",
-    "version": "0.1.21",
+    "version": "0.1.22",
     "description": "A queue of prints for each printer. Every path is relative to the mount the host assigns."
   },
   "components": {
@@ -82,6 +82,39 @@
     }
   },
   "paths": {
+    "/devices/{id}/ready": {
+      "post": {
+        "operationId": "mark-printer-ready",
+        "summary": "Mark a printer ready after confirming its plate is empty",
+        "description": "Requires permission to operate the printer. The next queued job can start once the printer reports READY.",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "plate_empty": { "const": true, "type": "boolean" }
+                },
+                "required": ["plate_empty"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": { "description": "The printer accepted the READY command." },
+          "400": { "description": "The request did not confirm an empty plate." },
+          "403": { "description": "The caller cannot operate the printer." },
+          "404": { "description": "The printer is unavailable." },
+          "409": { "description": "The printer is busy or could not accept READY." },
+          "500": { "description": "The queue could not save the confirmation." },
+          "503": { "description": "The module is starting." }
+        }
+      }
+    },
     "/devices/{id}/plate-check": {
       "post": {
         "operationId": "update-plate-check",

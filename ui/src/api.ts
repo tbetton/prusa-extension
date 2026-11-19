@@ -138,6 +138,9 @@ export const clearFinished = (deviceId: string | undefined): Promise<void> =>
 export const setPaused = (deviceId: string, paused: boolean): Promise<void> =>
   call('PUT', `/devices/${deviceId}/paused`, { paused });
 
+export const markPrinterReady = (deviceId: string): Promise<void> =>
+  call('POST', `/devices/${encodeURIComponent(deviceId)}/ready`, { plate_empty: true });
+
 export const updatePlateCheck = (
   deviceId: string,
   settings: { action: 'capture_reference' } | { action: 'set_automatic'; automatic: boolean },

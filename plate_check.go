@@ -45,7 +45,6 @@ type plateCheck struct {
 	first     plateSample
 	permit    platePermit
 	snapshot  func(context.Context) (plateFrame, error)
-	command   func(context.Context, deviceapi.CommandParams) (deviceapi.Result, error)
 	mayEnable func(context.Context, string, string) bool
 }
 
@@ -71,6 +70,9 @@ type plateReady struct {
 }
 
 func openPlateCheck(dir string, settings Settings, now func() time.Time) (*plateCheck, error) {
+	if settings.PlateCheckEnabled != nil && !*settings.PlateCheckEnabled {
+		return nil, nil
+	}
 	if settings.PlatePrinter == "" && settings.PlateCameraURL == "" {
 		return nil, nil
 	}
@@ -245,8 +247,7 @@ func (sc *Scheduler) checkPlate(ctx context.Context, device deviceapi.Device, ne
 		p.status = "waiting"
 		return
 	}
-	res, err := p.command(ctx, deviceapi.CommandParams{ID: next.DeviceID, Verb: readyVerb})
-	if err != nil || !res.OK || len(res.Ignored) > 0 || len(res.Substituted) > 0 {
+	if err := sc.sendReady(ctx, next.DeviceID); err != nil {
 		// Keep the guard. The command may have reached the printer.
 		p.status = "readyBlocked"
 		return

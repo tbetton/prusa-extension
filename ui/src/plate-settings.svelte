@@ -129,10 +129,10 @@
     error = '';
     saved = false;
     try {
-      const [resources, listed] = await Promise.all([
-        client.listResources({ query: { kind: 'sink' } }, signal),
-        client.listCameras({}, signal),
-      ]);
+      const resources = await client.listResources(
+        { query: { kind: 'sink' } },
+        signal,
+      );
       const instances: Instance[] = resources.items ?? [];
       const found = instances.find(
         (resource) => resource.namespace === moduleNamespace,
@@ -142,6 +142,8 @@
         return;
       }
       instance = found;
+      if (found.config.plate_check_enabled === false) return;
+      const listed = await client.listCameras({}, signal);
       cameras = listed.items ?? [];
       const storedPrinter = found.config.plate_check_printer;
       printerDraft =
@@ -260,6 +262,10 @@
   {#if loading || (!fleet.loaded && !fleet.error)}
     <p class="text-sm text-muted-foreground">
       {t('print-queue.setup.loading')}
+    </p>
+  {:else if instance?.config.plate_check_enabled === false}
+    <p class="text-sm text-muted-foreground">
+      {t('print-queue.setup.disabled')}
     </p>
   {:else if instance}
     {#if replaceSnapshotURL}

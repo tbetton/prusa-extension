@@ -7,6 +7,11 @@ Write the entry in the same change as the code. One bullet per behaviour a
 person outside this repository can observe: a route, a setting, a screen, a
 refusal. Name the route and the setting key, never a function or a file.
 
+## 0.1.22
+
+- Turn off the camera-based build plate check with `plate_check_enabled` in the extension settings.
+- Use **Mark as ready** in Print Queue to confirm an empty plate and set a compatible printer to READY.
+
 ## 0.1.21
 
 - Build plate check supports Prusa Connect Local on port 8090 and suggests the corresponding loopback address when the app uses that port.
