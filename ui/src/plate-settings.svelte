@@ -42,6 +42,7 @@
   let error = $state('');
   let previewError = $state(false);
   let previewTick = $state(0);
+  let replaceSnapshotURL = $state(false);
 
   const printers = $derived(
     (fleet.devices as readonly Device[])
@@ -122,14 +123,19 @@
       const storedURL = found.config.plate_camera_url;
       cameraDraft = undefined;
       origin = defaultOrigin;
+      replaceSnapshotURL = false;
       if (typeof storedURL === 'string' && URL.canParse(storedURL)) {
         const url = new URL(storedURL);
-        origin = url.origin;
-        cameraDraft = cameras.find(
-          (candidate) =>
-            candidate.device_id === printerDraft &&
-            snapshotPath(candidate.name) === url.pathname,
-        )?.name;
+        if (/^\/api\/v1\/cameras\/[^/]+\/snapshot$/u.test(url.pathname)) {
+          origin = url.origin;
+          cameraDraft = cameras.find(
+            (candidate) =>
+              candidate.device_id === printerDraft &&
+              snapshotPath(candidate.name) === url.pathname,
+          )?.name;
+        } else {
+          replaceSnapshotURL = true;
+        }
       }
     } catch {
       if (!signal.aborted) error = 'loadFailed';
@@ -169,6 +175,7 @@
         signal,
       );
       saved = true;
+      replaceSnapshotURL = false;
     } catch (cause) {
       if (signal.aborted) return;
       error = 'saveFailed';
@@ -189,6 +196,11 @@
       {t('print-queue.setup.loading')}
     </p>
   {:else if instance}
+    {#if replaceSnapshotURL}
+      <Alert>
+        <AlertTitle>{t('print-queue.setup.replaceSnapshotURL')}</AlertTitle>
+      </Alert>
+    {/if}
     <div class="flex flex-col gap-2">
       <Label for="{uid}-printer">{t('print-queue.setup.printer')}</Label>
       <Select

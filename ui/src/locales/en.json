@@ -18,6 +18,7 @@
   "print-queue.setup.preview": "Snapshot from the selected camera",
   "print-queue.setup.previewFailed": "A snapshot is unavailable from this camera.",
   "print-queue.setup.refreshPreview": "Refresh snapshot",
+  "print-queue.setup.replaceSnapshotURL": "The saved address is a direct camera URL. Select a camera below and save its Prusa Connect snapshot address.",
   "print-queue.setup.connection": "Server connection",
   "print-queue.setup.origin": "Prusa Connect Local address for the extension",
   "print-queue.setup.originHint": "Use the default loopback address when Print Queue runs in the Prusa Connect container.",

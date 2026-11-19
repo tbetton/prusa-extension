@@ -7,6 +7,10 @@ Write the entry in the same change as the code. One bullet per behaviour a
 person outside this repository can observe: a route, a setting, a screen, a
 refusal. Name the route and the setting key, never a function or a file.
 
+## 0.1.19
+
+- When a direct camera URL is already saved, the Build plate check settings suggest the Prusa Connect server address and let you select the registered camera.
+
 ## 0.1.18
 
 - Select a printer and its camera by name in the Build plate check settings tab, and preview a snapshot before saving.
