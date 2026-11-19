@@ -30,6 +30,7 @@
   type Instance = components['schemas']['ResourceInstance'];
   type Camera = components['schemas']['Camera'];
   type Device = components['schemas']['Device'];
+  type Credential = components['schemas']['CreatedCredentialBody'];
 
   let instance = $state<Instance>();
   let cameras = $state<Camera[]>([]);
@@ -88,6 +89,27 @@
       return '';
     }
   });
+  const serverOrigin = $derived(target ? new URL(target).origin : '');
+  const trustedOrigin = $derived(
+    serverOrigin === defaultOrigin || serverOrigin === window.location.origin,
+  );
+  const configured = $derived(
+    printer === instance?.config.plate_check_printer &&
+      target === instance?.config.plate_camera_url,
+  );
+  const credentialConfigured = $derived(
+    Boolean(instance?.config.plate_camera_token),
+  );
+  const tokenOriginMismatch = $derived.by(() => {
+    const previousURL = instance?.config.plate_camera_url;
+    return (
+      !trustedOrigin &&
+      credentialConfigured &&
+      (typeof previousURL !== 'string' ||
+        !URL.canParse(previousURL) ||
+        new URL(previousURL).origin !== serverOrigin)
+    );
+  });
 
   const choosePrinter = (id: string): void => {
     printerDraft = id;
@@ -145,12 +167,34 @@
   };
 
   const save = async (): Promise<void> => {
-    if (!instance || !printer || !target || instance.source === 'file') return;
+    if (
+      !instance ||
+      !printer ||
+      !camera ||
+      !target ||
+      tokenOriginMismatch ||
+      instance.source === 'file'
+    )
+      return;
     saving = true;
     error = '';
     saved = false;
     const current = instance;
+    let issued: Credential | undefined;
+    let writing = false;
     try {
+      if (trustedOrigin) {
+        const auth = await client.getAuthInfo({}, signal);
+        if (auth.provider !== '') {
+          issued = await client.createCredential(
+            {
+              body: { name: 'Print Queue camera', scopes: ['read'] },
+            },
+            signal,
+          );
+        }
+      }
+      writing = true;
       instance = await client.putResource(
         {
           path: { kind: 'sink', name: current.name },
@@ -163,6 +207,7 @@
               ...current.config,
               plate_check_printer: printer,
               plate_camera_url: target,
+              ...(issued ? { plate_camera_token: issued.token } : {}),
             },
             hidden_contributions: current.hidden_contributions ?? [],
             memory_mib: current.memory_mib ?? 0,
@@ -177,8 +222,19 @@
       saved = true;
       replaceSnapshotURL = false;
     } catch (cause) {
+      // A refused write did not store this credential. On a transport
+      // failure the server may already have saved it.
+      if (
+        issued &&
+        cause instanceof ApiError &&
+        [400, 401, 403, 404, 409, 412, 422].includes(cause.status)
+      ) {
+        await client
+          .revokeCredential({ path: { credential: issued.id } }, signal)
+          .catch(() => undefined);
+      }
       if (signal.aborted) return;
-      error = 'saveFailed';
+      error = writing ? 'saveFailed' : 'connectionFailed';
       if (cause instanceof ApiError && cause.status === 412) error = 'conflict';
       if (cause instanceof ApiError && cause.status === 403)
         error = 'forbidden';
@@ -318,18 +374,33 @@
         {t('print-queue.setup.locked')}
       </p>
     {:else}
-      <div>
+      <div class="flex flex-col items-start gap-2">
         <Button
           disabled={saving ||
             error === 'conflict' ||
             !printer ||
             !target ||
-            (printer === instance.config.plate_check_printer &&
-              target === instance.config.plate_camera_url)}
+            tokenOriginMismatch ||
+            (!trustedOrigin && configured)}
           onclick={save}
         >
-          {t('print-queue.save')}
+          {#if !trustedOrigin}
+            {t('print-queue.save')}
+          {:else if configured && credentialConfigured}
+            {t('print-queue.setup.reconnect')}
+          {:else}
+            {t('print-queue.setup.connect')}
+          {/if}
         </Button>
+        {#if trustedOrigin}
+          <p class="text-sm text-muted-foreground">
+            {t('print-queue.setup.connectHint')}
+          </p>
+        {:else if tokenOriginMismatch}
+          <p class="text-sm text-warning">
+            {t('print-queue.setup.changeTokenOrigin')}
+          </p>
+        {/if}
       </div>
     {/if}
     {#if saved}

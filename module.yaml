@@ -6,7 +6,7 @@
 
 name: print-queue
 kind: sink
-version: 0.1.19
+version: 0.1.20
 license: MIT
 title: Print Queue
 summary: Queue and schedule prints for each printer.
@@ -51,6 +51,9 @@ options:
   - key: plate_camera_url
     type: string
     summary: Snapshot URL of that printer's camera on this Prusa Connect Local server.
+  - key: plate_camera_token
+    type: secret
+    summary: Read-only Prusa Connect Local API credential for the camera snapshot.
 
 egress:
   - option: plate_camera_url

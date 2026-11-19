@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -273,5 +274,38 @@ func TestPlateCameraUsesTimestampAndReadToken(t *testing.T) {
 	taken = now.Add(-plateMaxAge - time.Second)
 	if _, err := camera.snapshot(t.Context()); err == nil {
 		t.Fatal("stale photo was accepted")
+	}
+}
+
+func TestPlateCameraReportsAuthenticationAndUsesConfiguredCredential(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	tokenFile := filepath.Join(t.TempDir(), "plate-camera.token")
+	camera, err := newPlateCamera("http://127.0.0.1:8080/api/v1/cameras/test/snapshot", tokenFile, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	jpg := encodeTestJPEG(t, platePhoto(45, false))
+	camera.client.Transport = plateHTTP(func(req *http.Request) (*http.Response, error) {
+		header := http.Header{}
+		switch req.Header.Get("Authorization") {
+		case "":
+			return &http.Response{StatusCode: http.StatusUnauthorized, Header: header, Body: http.NoBody}, nil
+		case "Bearer configured-token":
+			header.Set("Last-Modified", now.Format(http.TimeFormat))
+			return &http.Response{StatusCode: http.StatusOK, Header: header, Body: io.NopCloser(bytes.NewReader(jpg))}, nil
+		default:
+			t.Fatal("unexpected Authorization header")
+			return nil, nil
+		}
+	})
+	if _, err := camera.snapshot(t.Context()); err == nil || !strings.Contains(err.Error(), "plate_camera_token") {
+		t.Fatalf("wanted the token setting in the HTTP 401 error, got %v", err)
+	}
+	if err := os.WriteFile(tokenFile, []byte("legacy-file-token"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	camera.token = "configured-token"
+	if shot, err := camera.snapshot(t.Context()); err != nil || !shot.taken.Equal(now) {
+		t.Fatalf("configured token should override the token file, got photo %s and error %v", shot.taken, err)
 	}
 }

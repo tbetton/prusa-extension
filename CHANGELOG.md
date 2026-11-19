@@ -7,6 +7,11 @@ Write the entry in the same change as the code. One bullet per behaviour a
 person outside this repository can observe: a route, a setting, a screen, a
 refusal. Name the route and the setting key, never a function or a file.
 
+## 0.1.20
+
+- Select the camera and choose Connect camera. Print Queue creates a read-only credential when the server requires sign-in.
+- Reference capture reports authentication, connection, and snapshot errors separately.
+
 ## 0.1.19
 
 - When a direct camera URL is already saved, the Build plate check settings suggest the Prusa Connect server address and let you select the registered camera.

@@ -31,6 +31,7 @@ type plateFrame struct {
 
 type plateCamera struct {
 	url       string
+	token     string
 	tokenFile string
 	client    *http.Client
 	now       func() time.Time
@@ -60,36 +61,62 @@ func newPlateCamera(rawURL, tokenFile string, now func() time.Time) (*plateCamer
 	}, nil
 }
 
+func (c *plateCamera) readToken() (string, error) {
+	token := strings.TrimSpace(c.token)
+	if token == "" {
+		file, err := os.Open(c.tokenFile)
+		if errors.Is(err, os.ErrNotExist) {
+			return "", nil
+		}
+		if err != nil {
+			return "", errors.New("the camera token file could not be read")
+		}
+		defer file.Close()
+		info, statErr := file.Stat()
+		if statErr != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 {
+			return "", errors.New("the camera token file must be private")
+		}
+		raw, readErr := io.ReadAll(io.LimitReader(file, 8193))
+		if readErr != nil || len(raw) > 8192 {
+			return "", errors.New("the camera token file could not be read")
+		}
+		token = strings.TrimSpace(string(raw))
+	}
+	if token == "" || len(token) > 8192 || strings.ContainsAny(token, " \t\r\n") {
+		return "", errors.New("enter a valid camera API token in the Print Queue settings")
+	}
+	return token, nil
+}
+
 func (c *plateCamera) snapshot(ctx context.Context) (plateFrame, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url, nil)
 	if err != nil {
-		return plateFrame{}, err
+		return plateFrame{}, errors.New("the configured camera snapshot URL is invalid")
 	}
 	req.Header.Set("Accept", "image/jpeg")
 	req.Header.Set("Cache-Control", "no-cache")
-	if file, err := os.Open(c.tokenFile); err == nil {
-		info, statErr := file.Stat()
-		if statErr != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 {
-			_ = file.Close()
-			return plateFrame{}, errors.New("camera token file must be private")
-		}
-		raw, readErr := io.ReadAll(io.LimitReader(file, 8193))
-		_ = file.Close()
-		token := strings.TrimSpace(string(raw))
-		if readErr != nil || len(raw) > 8192 || token == "" || strings.ContainsAny(token, " \t\r\n") {
-			return plateFrame{}, errors.New("invalid camera token file")
-		}
-		req.Header.Set("Authorization", "Bearer "+token)
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return plateFrame{}, err
-	}
-	resp, err := c.client.Do(req)
+	token, err := c.readToken()
 	if err != nil {
 		return plateFrame{}, err
 	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return plateFrame{}, errors.New("Print Queue could not connect to the configured Prusa Connect server")
+	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return plateFrame{}, errors.New("camera has no accessible snapshot")
+	switch resp.StatusCode {
+	case http.StatusOK:
+	case http.StatusUnauthorized:
+		return plateFrame{}, errors.New("Prusa Connect requires a valid read-only API token for the camera. Set plate_camera_token in Print Queue settings")
+	case http.StatusForbidden, http.StatusNotFound:
+		return plateFrame{}, errors.New("Prusa Connect could not find the camera or the API token cannot observe it")
+	case http.StatusNoContent:
+		return plateFrame{}, errors.New("Prusa Connect has no image from this camera yet")
+	default:
+		return plateFrame{}, errors.New("Prusa Connect could not serve the camera snapshot")
 	}
 	taken, err := http.ParseTime(resp.Header.Get("Last-Modified"))
 	if now := c.now(); err != nil || taken.After(now) || now.Sub(taken) > plateMaxAge {
@@ -97,7 +124,7 @@ func (c *plateCamera) snapshot(ctx context.Context) (plateFrame, error) {
 	}
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxPlateJPEG+1))
 	if err != nil {
-		return plateFrame{}, err
+		return plateFrame{}, errors.New("the camera snapshot could not be downloaded")
 	}
 	img, err := decodePlateJPEG(raw)
 	if err != nil {
@@ -115,7 +142,11 @@ func decodePlateJPEG(raw []byte) (image.Image, error) {
 		config.Width > 1920 || config.Height > 1920 || config.Width*config.Height > 1920*1080 {
 		return nil, errors.New("camera snapshot dimensions must be between 320x240 and 2 megapixels")
 	}
-	return jpeg.Decode(bytes.NewReader(raw))
+	img, err := jpeg.Decode(bytes.NewReader(raw))
+	if err != nil {
+		return nil, errors.New("the camera returned an invalid JPEG")
+	}
+	return img, nil
 }
 
 // plateMatch uses the entire fixed camera view. Local blocks catch changes

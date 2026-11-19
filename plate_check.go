@@ -81,6 +81,7 @@ func openPlateCheck(dir string, settings Settings, now func() time.Time) (*plate
 	if err != nil {
 		return nil, err
 	}
+	camera.token = settings.PlateCameraToken
 	p := &plateCheck{
 		settings: plateSettings{Device: settings.PlatePrinter, Camera: camera.url},
 		file:     filepath.Join(dir, "plate-check.json"), snapshot: camera.snapshot, status: "noReference",
@@ -264,7 +265,7 @@ func (p *plateCheck) capture(ctx context.Context, sc *Scheduler) (plateSettings,
 	}
 	shot, err := p.snapshot(ctx)
 	if err != nil {
-		return plateSettings{}, nil, errors.New("a fresh JPEG from the configured camera is unavailable")
+		return plateSettings{}, nil, err
 	}
 	last, err := sc.lastPlatePrint(ctx, id)
 	if err != nil || (last != nil && last.Ended != nil && !shot.taken.After(*last.Ended)) {
