@@ -61,6 +61,7 @@
   "print-queue.plate.status.matched": "Both captures matched",
   "print-queue.plate.status.different": "Image differs from the reference or is unclear",
   "print-queue.plate.status.cameraUnavailable": "Fresh camera capture unavailable",
+  "print-queue.plate.status.retryingCamera": "Retrying the second camera capture",
   "print-queue.plate.status.permissionRequired": "Permission check failed",
   "print-queue.plate.status.readyBlocked": "Automatic READY could not be confirmed",
   "print-queue.plate.status.waitingReady": "Waiting for the printer to report READY",

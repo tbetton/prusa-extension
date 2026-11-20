@@ -166,6 +166,64 @@ func TestPlateCheckRejectsAnObstructionOrMissingEvidence(t *testing.T) {
 	}
 }
 
+func TestPlateCheckRetriesTheSecondCapture(t *testing.T) {
+	for _, scenario := range []struct {
+		name   string
+		retry  time.Duration
+		change func(plateFrame, plateSample) (plateFrame, error)
+	}{
+		{"unavailable", 40 * time.Second, func(_ plateFrame, _ plateSample) (plateFrame, error) {
+			return plateFrame{}, errors.New("camera unavailable")
+		}},
+		{"stale", 40 * time.Second, func(frame plateFrame, _ plateSample) (plateFrame, error) {
+			frame.taken = frame.taken.Add(-plateMaxAge - time.Second)
+			return frame, nil
+		}},
+		{"repeated", 40 * time.Second, func(frame plateFrame, first plateSample) (plateFrame, error) {
+			frame.sum = first.sum
+			return frame, nil
+		}},
+		{"window expired", plateSampleWindow + time.Second, func(_ plateFrame, _ plateSample) (plateFrame, error) {
+			return plateFrame{}, errors.New("camera unavailable")
+		}},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			store, fleet, sc, clock := setup(t, "FINISHED")
+			commands, _ := configurePlateFixture(t, fleet, sc, clock, true)
+			_, _ = store.Add(Job{DeviceID: "p1", Path: "next.bgcode"})
+			start := clock.at
+			sc.Tick(t.Context())
+			first := sc.plate.first
+			get := sc.plate.snapshot
+			sc.plate.snapshot = func(ctx context.Context) (plateFrame, error) {
+				frame, err := get(ctx)
+				if err != nil {
+					return plateFrame{}, err
+				}
+				return scenario.change(frame, first)
+			}
+			clock.at = start.Add(plateDelay)
+			sc.Tick(t.Context())
+			if *commands != 0 || sc.plate.first != first || sc.plate.status != "retryingCamera" {
+				t.Fatal("the first match should be kept while waiting for a new second frame")
+			}
+
+			sc.plate.snapshot = get
+			clock.at = start.Add(scenario.retry)
+			sc.Tick(t.Context())
+			if scenario.retry > plateSampleWindow {
+				if *commands != 0 || sc.plate.status != "firstMatch" || !sc.plate.first.checked.Equal(clock.at) {
+					t.Fatal("a frame after the window must start a new pair")
+				}
+				return
+			}
+			if *commands != 1 || sc.plate.status != "waitingReady" || len(fleet.printed) != 0 {
+				t.Fatal("the fresh retry should request READY and wait for the printer to confirm")
+			}
+		})
+	}
+}
+
 func TestPlateReadyCannotAuthorizeAnotherJobOrSurviveRestart(t *testing.T) {
 	for _, scenario := range []string{"queue changed", "restart", "expired", "lost reply"} {
 		t.Run(scenario, func(t *testing.T) {

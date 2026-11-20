@@ -15,9 +15,10 @@ import (
 )
 
 const (
-	plateDelay     = 30 * time.Second
-	platePermitTTL = 40 * time.Second
-	readyVerb      = "core.command.set_printer_ready"
+	plateDelay        = 30 * time.Second
+	plateSampleWindow = 2 * plateDelay
+	platePermitTTL    = 40 * time.Second
+	readyVerb         = "core.command.set_printer_ready"
 )
 
 type plateSettings struct {
@@ -172,17 +173,24 @@ func (sc *Scheduler) checkPlate(ctx context.Context, device deviceapi.Device, ne
 		return
 	}
 	first := p.first
-	if first.job != next.ID || first.previous != last.ID || first.epoch != device.CapabilityEpoch ||
-		sc.now().Sub(first.checked) > 2*plateDelay {
+	if first.job != next.ID || first.previous != last.ID || first.epoch != device.CapabilityEpoch {
 		first = plateSample{}
 	}
 	if !first.checked.IsZero() && sc.now().Sub(first.checked) < plateDelay {
 		return
 	}
 	shot, err := p.snapshot(ctx)
-	if err != nil || sc.now().Sub(shot.taken) > plateMaxAge || !shot.taken.After(*last.Ended) ||
+	checked := sc.now()
+	if !first.checked.IsZero() && checked.Sub(first.checked) > plateSampleWindow {
+		first = plateSample{}
+	}
+	p.first = first
+	if err != nil || checked.Sub(shot.taken) > plateMaxAge || !shot.taken.After(*last.Ended) ||
 		(!first.checked.IsZero() && shot.sum == first.sum) {
-		p.reset("cameraUnavailable")
+		p.status = "cameraUnavailable"
+		if !first.checked.IsZero() {
+			p.status = "retryingCamera"
+		}
 		return
 	}
 	if !usablePlateImage(shot.image) || !plateMatch(p.reference, shot.image) {
@@ -190,12 +198,13 @@ func (sc *Scheduler) checkPlate(ctx context.Context, device deviceapi.Device, ne
 		return
 	}
 	if !first.checked.IsZero() && shot.taken.Sub(first.taken) < plateDelay {
+		p.status = "retryingCamera"
 		return
 	}
 	if first.checked.IsZero() {
 		p.first = plateSample{
 			job: next.ID, previous: last.ID, epoch: device.CapabilityEpoch,
-			checked: sc.now(), taken: shot.taken, sum: shot.sum,
+			checked: checked, taken: shot.taken, sum: shot.sum,
 		}
 		p.status = "firstMatch"
 		return
