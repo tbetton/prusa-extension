@@ -7,6 +7,14 @@ Write the entry in the same change as the code. One bullet per behaviour a
 person outside this repository can observe: a route, a setting, a screen, a
 refusal. Name the route and the setting key, never a function or a file.
 
+## 0.1.34
+
+- Remove the camera-based build plate check and its settings. Confirm readiness on the printer or with **Mark as ready**.
+
+## 0.1.33
+
+- Build plate checks use the selected camera’s local H.264 RTSP stream. Print Queue no longer creates or uses personal API credentials.
+
 ## 0.1.32
 
 - Reduce compression noise when comparing HD RTSP snapshots in the build plate check.

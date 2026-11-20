@@ -37,7 +37,6 @@ func (sc *Scheduler) follow(ctx context.Context, conn *wirerpc.Conn) {
 
 		sc.mu.Lock()
 		sc.following = false
-		sc.resetPlateStream()
 		sc.mu.Unlock()
 		if err != nil && ctx.Err() == nil {
 			sc.logf("follow printer events: %v", err)
@@ -65,7 +64,6 @@ func (sc *Scheduler) applyWindow(window busapi.Window) error {
 			applyPrintEvent(data, frame)
 		}
 		if window.Resync {
-			sc.resetPlateStream()
 			for i := range data.Jobs {
 				job := &data.Jobs[i]
 				if job.Status == statusStarting || job.Status == statusPrinting {
@@ -76,13 +74,6 @@ func (sc *Scheduler) applyWindow(window busapi.Window) error {
 		data.Cursor = window.Cursor
 		return nil
 	})
-}
-
-func (sc *Scheduler) resetPlateStream() {
-	if sc.plate != nil {
-		sc.plate.first = plateSample{}
-		sc.plate.permit = platePermit{}
-	}
 }
 
 func applyPrintEvent(data *snapshot, frame event.Envelope) {

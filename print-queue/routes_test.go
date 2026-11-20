@@ -110,72 +110,17 @@ func TestClearFinishedOnlyTouchesAuthorizedPrinters(t *testing.T) {
 	}
 }
 
-func TestPlateSettingsRequireAnOperatorAndSurviveRestart(t *testing.T) {
-	store, _, sc, clock := setup(t, "IDLE")
-	dir := filepath.Dir(store.file)
-	settings := Settings{PlatePrinter: "p1", PlateCameraURL: "http://127.0.0.1:8080/api/v1/cameras/p1/snapshot"}
-	p, err := openPlateCheck(dir, settings, clock.now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	img := platePhoto(45, false)
-	jpg := encodeTestJPEG(t, img)
-	p.snapshot = func(context.Context) (plateFrame, error) {
-		return plateFrame{jpeg: jpg, image: img, taken: clock.at}, nil
-	}
-	sc.plate = p
-	routes := (&module{store: store, access: queueAccess{}, scheduler: sc}).routes()
-	const enable = `{"action":"set_automatic","automatic":true}`
-	const capture = `{"action":"capture_reference"}`
-	for _, step := range []struct {
-		principal, body string
-		want            int
-		automatic       bool
-	}{
-		{"user:viewer", capture, http.StatusForbidden, false},
-		{"user:operator", enable, http.StatusConflict, false},
-		{"user:operator", capture, http.StatusNoContent, false},
-		{"user:operator", enable, http.StatusNoContent, true},
-		{"user:viewer", `{"action":"set_automatic","automatic":false}`, http.StatusForbidden, true},
-		{"user:operator", capture, http.StatusNoContent, false},
-	} {
-		req, err := (routesapi.Request{
-			Method: http.MethodPost, Path: "/devices/p1/plate-check", Principal: step.principal, Body: []byte(step.body),
-		}).HTTP(t.Context())
-		if err != nil {
-			t.Fatal(err)
-		}
-		r := httptest.NewRecorder()
-		routes.ServeHTTP(r, req)
-		if r.Code != step.want {
-			t.Fatalf("%s %s returned %d, want %d: %s", step.principal, step.body, r.Code, step.want, r.Body)
-		}
-		reloaded, err := openPlateCheck(dir, settings, clock.now)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if (reloaded.settings.EnabledBy != "") != step.automatic ||
-			(reloaded.reference != nil) != (p.reference != nil) {
-			t.Fatalf("saved plate settings are wrong after %s", step.body)
-		}
-	}
-	settings.PlateCameraURL = "http://127.0.0.1:8080/api/v1/cameras/different/snapshot"
-	reloaded, err := openPlateCheck(dir, settings, clock.now)
-	if err != nil || reloaded.reference != nil || reloaded.settings.EnabledBy != "" {
-		t.Fatalf("changing camera must invalidate the reference: %v", err)
-	}
+type readyFleet struct{ *fakeFleet }
+
+func (f readyFleet) Get(ctx context.Context, args deviceapi.GetParams) (deviceapi.Device, error) {
+	device, err := f.fakeFleet.Get(ctx, args)
+	device.Capabilities = []string{readyVerb}
+	return device, err
 }
 
-func TestManualReadyWorksWithoutCameraCheck(t *testing.T) {
-	store, fleet, sc, clock := setup(t, "FINISHED")
-	disabled := false
-	plate, err := openPlateCheck(filepath.Dir(store.file), Settings{
-		PlateCheckEnabled: &disabled, PlatePrinter: "p1", PlateCameraURL: "ignored",
-	}, clock.now)
-	if err != nil || plate != nil {
-		t.Fatalf("disabled camera check opened: %v", err)
-	}
-	sc.fleet = &plateFleet{fakeFleet: fleet, epoch: 1}
+func TestManualReadyWaitsForPrinterConfirmation(t *testing.T) {
+	store, fleet, sc, _ := setup(t, "FINISHED")
+	sc.fleet = readyFleet{fleet}
 	var commands int
 	sc.command = func(_ context.Context, p deviceapi.CommandParams) (deviceapi.Result, error) {
 		if p.ID != "p1" || p.Verb != readyVerb {
@@ -186,7 +131,7 @@ func TestManualReadyWorksWithoutCameraCheck(t *testing.T) {
 	}
 	_, _ = store.Add(Job{DeviceID: "p1", Path: "next.bgcode"})
 	if err := store.update(func(data *snapshot) error {
-		data.PlateReady = map[string]plateReady{"p1": {}}
+		data.UnconfirmedReady = map[string]readyMarker{"p1": {}}
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -222,5 +167,47 @@ func TestManualReadyWorksWithoutCameraCheck(t *testing.T) {
 	sc.Tick(t.Context())
 	if len(fleet.printed) != 1 {
 		t.Fatal("the queue did not dispatch after the printer reported READY")
+	}
+}
+
+func TestUpgradeRequiresConfirmationForAnAutomaticReady(t *testing.T) {
+	store, fleet, sc, c := setup(t, printerReady)
+	if _, err := store.Add(Job{DeviceID: "p1", Path: "next.bgcode"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.update(func(data *snapshot) error {
+		data.UnconfirmedReady = map[string]readyMarker{"p1": {}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	upgraded, err := OpenStore(filepath.Dir(store.file), c.now, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sc.store = upgraded
+	sc.command = func(context.Context, deviceapi.CommandParams) (deviceapi.Result, error) {
+		t.Fatal("a printer already reporting READY should not receive another READY command")
+		return deviceapi.Result{}, nil
+	}
+	sc.Tick(t.Context())
+	if len(fleet.printed) != 0 || !upgraded.List("p1").ReadyConfirmationRequired["p1"] {
+		t.Fatal("the queue must wait for confirmation before using a READY from an earlier release")
+	}
+
+	req, err := (routesapi.Request{
+		Method: http.MethodPost, Path: "/devices/p1/ready", Principal: "user:operator", Body: []byte(`{"plate_empty":true}`),
+	}).HTTP(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	(&module{store: upgraded, access: queueAccess{}, scheduler: sc}).routes().ServeHTTP(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("READY confirmation returned %d: %s", w.Code, w.Body)
+	}
+	sc.Tick(t.Context())
+	if len(fleet.printed) != 1 {
+		t.Fatal("the queue did not dispatch after manual confirmation")
 	}
 }
