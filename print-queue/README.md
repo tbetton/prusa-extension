@@ -46,7 +46,7 @@ When the result of a start command is uncertain, Print Queue marks the job as Un
 
 Turn **Enable build plate check** on or off in **Settings → Extensions → Print Queue → Build plate check**. The saved reference and automatic readiness preference are restored when the check is enabled again. **Mark as ready** remains available when the camera check is off.
 
-1. Open **Settings → Extensions → Print Queue → Build plate check**. Choose the printer and camera, check the preview, and click **Connect camera**. A sole printer or camera is selected automatically. When Prusa Connect requires sign-in, this button creates a read-only credential from your current session and saves it for background checks. If access expires or is revoked, use **Reconnect camera** from the same tab.
+1. Open **Settings → Extensions → Print Queue → Build plate check** and choose the printer and camera. For a camera with a JPEG snapshot source, check the preview and click **Connect camera**. If the camera only has H.264 RTSP video, click **Use direct camera**. Print Queue reads the stream already declared in Prusa Connect and creates its own JPEGs on demand. Direct mode supports private LAN IP addresses on RTSP ports 554 and 8554. For a JPEG source that requires sign-in, **Connect camera** creates a read-only credential. Use **Reconnect camera** if access expires.
 2. Clear the plate and check the preview. Choose **Confirm empty plate and calibrate** while the printer is idle or finished. Keep the printer and lighting steady while Print Queue collects three fresh images. You can calibrate again for another printer state or lighting condition. Print Queue keeps the two most recent calibration sets per state, plus any reference saved before this update. Test with automatic starts off and an eligible job queued, with the plate both empty and occupied.
 3. To opt in, select **Allow automatic starts after the plate check**. With an eligible job queued, Print Queue checks the plate when the printer is **IDLE** or **FINISHED**. Prusa Connect must report no active print and, if there is a previous job, a successful result. **FINISHED** always requires a recorded successful print. Two fresh matching pictures at least 30 seconds apart are required before requesting **READY**. Print Queue waits for the printer to report **READY** before sending the job. Capturing a replacement reference turns automatic starts off.
 
@@ -69,4 +69,5 @@ Open **Settings → Extensions → Print Queue**.
 | `plate_check_enabled` | true | Enable the camera-based build plate check |
 | `plate_check_printer` | unset | Device ID of the printer to check |
 | `plate_camera_url` | unset | Prusa Connect Local camera snapshot URL on port 80, 443, 8080, or 8090 |
+| `plate_camera_stream` | unset | Private LAN H.264 RTSP address selected from Prusa Connect camera settings |
 | `plate_camera_token` | unset | Masked read-only API credential for the camera snapshot |

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "print-queue",
-    "version": "0.1.30",
+    "version": "0.1.31",
     "description": "A queue of prints for each printer. Every path is relative to the mount the host assigns."
   },
   "components": {
@@ -123,6 +123,24 @@
           "409": { "description": "The printer is busy or could not accept READY." },
           "500": { "description": "The queue could not save the confirmation." },
           "503": { "description": "The module is starting." }
+        }
+      }
+    },
+    "/devices/{id}/plate-preview": {
+      "get": {
+        "operationId": "preview-plate-camera",
+        "summary": "Read a current JPEG from the configured plate camera",
+        "description": "Requires permission to observe the printer. The preview does not change the build plate calibration.",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "A fresh camera image.",
+            "content": { "image/jpeg": { "schema": { "type": "string", "format": "binary" } } }
+          },
+          "404": { "description": "The caller cannot see the printer, or the printer has no configured plate camera." },
+          "409": { "description": "A fresh camera image is unavailable." }
         }
       }
     },

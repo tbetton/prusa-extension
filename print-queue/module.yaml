@@ -6,7 +6,7 @@
 
 name: print-queue
 kind: sink
-version: 0.1.30
+version: 0.1.31
 license: MIT
 title: Print Queue
 summary: Queue and schedule prints for each printer.
@@ -62,6 +62,9 @@ options:
   - key: plate_camera_token
     type: secret
     summary: Read-only Prusa Connect Local API credential for the camera snapshot.
+  - key: plate_camera_stream
+    type: string
+    summary: Optional LAN H.264 RTSP source selected in Build plate check.
 
 egress:
   - option: plate_camera_url
@@ -69,6 +72,11 @@ egress:
     from: process
     why: Reads snapshots from the configured Prusa Connect Local server.
     sends: Sends a GET request and the optional read-only bearer token for that server.
+  - option: plate_camera_stream
+    ports: [554, 8554]
+    from: process
+    why: Reads a camera keyframe for a build plate snapshot when the camera only has video.
+    sends: Opens a TCP RTSP session to the selected LAN camera.
 
 needs:
   memory_mib: 64

@@ -87,20 +87,37 @@ func openPlateCheck(dir string, settings Settings, now func() time.Time) (*plate
 	if settings.PlateCheckEnabled != nil && !*settings.PlateCheckEnabled {
 		return nil, nil
 	}
-	if settings.PlatePrinter == "" && settings.PlateCameraURL == "" {
+	if settings.PlatePrinter == "" && settings.PlateCameraURL == "" && settings.PlateCameraStream == "" {
 		return nil, nil
 	}
 	if settings.PlatePrinter == "" {
-		return nil, errors.New("plate_check_printer is required with plate_camera_url")
+		return nil, errors.New("plate_check_printer is required with a plate camera")
 	}
-	camera, err := newPlateCamera(settings.PlateCameraURL, filepath.Join(dir, "plate-camera.token"), now)
-	if err != nil {
-		return nil, err
-	}
-	camera.token = settings.PlateCameraToken
-	p := &plateCheck{
-		settings: plateSettings{Device: settings.PlatePrinter, Camera: camera.url},
-		file:     filepath.Join(dir, "plate-check.json"), snapshot: camera.snapshot, status: "noReference",
+	p := &plateCheck{file: filepath.Join(dir, "plate-check.json"), status: "noReference"}
+	p.settings.Device = settings.PlatePrinter
+	if settings.PlateCameraStream != "" {
+		address, peer, err := plateRTSPAddress(settings.PlateCameraStream)
+		if err != nil {
+			return nil, err
+		}
+		p.settings.Camera = address.String()
+		gate := make(chan struct{}, 1)
+		p.snapshot = func(ctx context.Context) (plateFrame, error) {
+			select {
+			case gate <- struct{}{}:
+				defer func() { <-gate }()
+				return readPlateRTSP(ctx, address, peer, now)
+			default:
+				return plateFrame{}, errors.New("the RTSP camera is already capturing an image")
+			}
+		}
+	} else {
+		camera, err := newPlateCamera(settings.PlateCameraURL, filepath.Join(dir, "plate-camera.token"), now)
+		if err != nil {
+			return nil, err
+		}
+		camera.token = settings.PlateCameraToken
+		p.settings.Camera, p.snapshot = camera.url, camera.snapshot
 	}
 	if err := p.load(); err != nil {
 		// The queue remains available for manual READY if plate settings are unreadable.

@@ -23,6 +23,8 @@
   "print-queue.setup.pickCamera": "Choose a camera",
   "print-queue.setup.noCamera": "Add a camera with snapshots in the printer’s Cameras tab.",
   "print-queue.setup.preview": "Snapshot from the selected camera",
+  "print-queue.setup.streamSave": "Print Queue can capture directly from this camera’s RTSP video. Save it to enable the preview.",
+  "print-queue.setup.useDirectCamera": "Use direct camera",
   "print-queue.setup.previewFailed": "A snapshot is unavailable from this camera.",
   "print-queue.setup.refreshPreview": "Refresh snapshot",
   "print-queue.setup.replaceSnapshotURL": "The saved address is a direct camera URL. Select a camera below and save its Prusa Connect snapshot address.",

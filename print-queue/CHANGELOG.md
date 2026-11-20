@@ -7,6 +7,10 @@ Write the entry in the same change as the code. One bullet per behaviour a
 person outside this repository can observe: a route, a setting, a screen, a
 refusal. Name the route and the setting key, never a function or a file.
 
+## 0.1.31
+
+- Select a camera with only an H.264 RTSP stream in Build plate check. Print Queue reads that stream directly to create fresh plate snapshots.
+
 ## 0.1.30
 
 - Retry camera frames during plate calibration, tolerate small uniform changes in exposure, and show what prevents calibration from completing.

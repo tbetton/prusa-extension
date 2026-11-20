@@ -18,7 +18,7 @@
     Switch,
   } from '@prusa/connect-ui/primitives';
 
-  import { moduleNamespace } from './api';
+  import { moduleNamespace, platePreviewURL } from './api';
   import { heldHost } from './host';
   import PlateReference from './plate-reference.svelte';
 
@@ -40,6 +40,7 @@
 
   let instance = $state<Instance>();
   let cameras = $state<Camera[]>([]);
+  let cameraStreams = $state<Record<string, string>>({});
   let printerDraft = $state<string>();
   let cameraDraft = $state<string>();
   let origin = $state(defaultOrigin);
@@ -69,13 +70,18 @@
   );
   const availableCameras = $derived(
     cameras
-      .filter((camera) => camera.device_id === printer && camera.snapshot)
+      .filter(
+        (camera) =>
+          camera.device_id === printer &&
+          (camera.snapshot || cameraStreams[camera.name]),
+      )
       .map((camera) => ({ value: camera.name, label: camera.name })),
   );
   const camera = $derived(
     availableCameras.find((option) => option.value === cameraDraft)?.value ??
       (availableCameras.length === 1 ? availableCameras[0]?.value : undefined),
   );
+  const stream = $derived(camera ? (cameraStreams[camera] ?? '') : '');
 
   const target = $derived.by(() => {
     if (!camera) return '';
@@ -104,7 +110,10 @@
   );
   const configured = $derived(
     printer === instance?.config.plate_check_printer &&
-      target === instance?.config.plate_camera_url,
+      (stream
+        ? stream === instance?.config.plate_camera_stream
+        : !instance?.config.plate_camera_stream &&
+          target === instance?.config.plate_camera_url),
   );
   const credentialConfigured = $derived(
     Boolean(instance?.config.plate_camera_token),
@@ -112,6 +121,7 @@
   const tokenOriginMismatch = $derived.by(() => {
     const previousURL = instance?.config.plate_camera_url;
     return (
+      !stream &&
       !trustedOrigin &&
       credentialConfigured &&
       (typeof previousURL !== 'string' ||
@@ -179,17 +189,43 @@
       if (found.config.plate_check_enabled === false) return;
       const listed = await client.listCameras({}, signal);
       cameras = listed.items ?? [];
+      cameraStreams = {};
+      if (cameras.some((candidate) => candidate.watch)) {
+        try {
+          const declared = await client.listCameraSettings({}, signal);
+          cameraStreams = Object.fromEntries(
+            (declared.items ?? []).flatMap(({ name, config }) => {
+              const direct = config.stream_url;
+              return typeof direct === 'string' &&
+                direct.startsWith('rtsp://') &&
+                !config.snapshot_url
+                ? [[name, direct]]
+                : [];
+            }),
+          );
+        } catch (cause) {
+          // Camera settings require operator access. The JPEG picker remains usable for viewers.
+          if (!(cause instanceof ApiError && cause.status === 403)) throw cause;
+        }
+      }
       const storedPrinter = found.config.plate_check_printer;
       printerDraft =
         typeof storedPrinter === 'string' && storedPrinter !== ''
           ? storedPrinter
           : undefined;
       const storedURL = found.config.plate_camera_url;
+      const storedStream = found.config.plate_camera_stream;
       cameraDraft = undefined;
       origin = defaultOrigin;
       replaceSnapshotURL = false;
       updateLoopback = false;
-      if (typeof storedURL === 'string' && URL.canParse(storedURL)) {
+      if (typeof storedStream === 'string' && storedStream !== '') {
+        cameraDraft = cameras.find(
+          (candidate) =>
+            candidate.device_id === printerDraft &&
+            cameraStreams[candidate.name] === storedStream,
+        )?.name;
+      } else if (typeof storedURL === 'string' && URL.canParse(storedURL)) {
         const url = new URL(storedURL);
         if (/^\/api\/v1\/cameras\/[^/]+\/snapshot$/u.test(url.pathname)) {
           updateLoopback =
@@ -231,7 +267,7 @@
       !instance ||
       !printer ||
       !camera ||
-      !target ||
+      (!stream && !target) ||
       tokenOriginMismatch ||
       instance.source === 'file'
     )
@@ -243,7 +279,7 @@
     let issued: Credential | undefined;
     let writing = false;
     try {
-      if (trustedOrigin) {
+      if (!stream && trustedOrigin) {
         const auth = await client.getAuthInfo({}, signal);
         if (auth.provider !== '') {
           issued = await client.createCredential(
@@ -257,7 +293,8 @@
       writing = true;
       instance = await writeConfig(current, {
         plate_check_printer: printer,
-        plate_camera_url: target,
+        plate_camera_url: stream ? '' : target,
+        plate_camera_stream: stream,
         ...(issued ? { plate_camera_token: issued.token } : {}),
       });
       saved = true;
@@ -391,12 +428,16 @@
       </div>
     {/if}
 
-    {#if camera}
+    {#if stream && !configured}
+      <p class="text-sm text-muted-foreground">
+        {t('print-queue.setup.streamSave')}
+      </p>
+    {:else if camera}
       <div class="flex flex-col items-start gap-2">
         <img
           class="rounded max-h-64 w-full border object-contain"
           class:hidden={previewError}
-          src={`${snapshotPath(camera)}?tick=${String(previewTick)}`}
+          src={`${stream && printer ? platePreviewURL(printer) : snapshotPath(camera)}?tick=${String(previewTick)}`}
           alt={t('print-queue.setup.preview')}
           onerror={() => {
             previewError = true;
@@ -422,28 +463,32 @@
       </div>
     {/if}
 
-    <Collapsible class="text-sm">
-      <CollapsibleTrigger variant="inline"
-        >{t('print-queue.setup.connection')}</CollapsibleTrigger
-      >
-      <CollapsibleContent class="mt-2 flex flex-col gap-2">
-        <Label for="{uid}-origin">{t('print-queue.setup.origin')}</Label>
-        <Input
-          id="{uid}-origin"
-          type="url"
-          value={origin}
-          disabled={saving}
-          oninput={(event) => {
-            origin = event.currentTarget.value;
-            saved = false;
-          }}
-        />
-        <p class="text-muted-foreground">{t('print-queue.setup.originHint')}</p>
-        {#if camera && !target}
-          <p class="text-warning">{t('print-queue.setup.invalidOrigin')}</p>
-        {/if}
-      </CollapsibleContent>
-    </Collapsible>
+    {#if !stream}
+      <Collapsible class="text-sm">
+        <CollapsibleTrigger variant="inline"
+          >{t('print-queue.setup.connection')}</CollapsibleTrigger
+        >
+        <CollapsibleContent class="mt-2 flex flex-col gap-2">
+          <Label for="{uid}-origin">{t('print-queue.setup.origin')}</Label>
+          <Input
+            id="{uid}-origin"
+            type="url"
+            value={origin}
+            disabled={saving}
+            oninput={(event) => {
+              origin = event.currentTarget.value;
+              saved = false;
+            }}
+          />
+          <p class="text-muted-foreground">
+            {t('print-queue.setup.originHint')}
+          </p>
+          {#if camera && !target}
+            <p class="text-warning">{t('print-queue.setup.invalidOrigin')}</p>
+          {/if}
+        </CollapsibleContent>
+      </Collapsible>
+    {/if}
 
     {#if instance.source === 'file'}
       <p class="text-sm text-muted-foreground">
@@ -455,12 +500,14 @@
           disabled={saving ||
             error === 'conflict' ||
             !printer ||
-            !target ||
+            (!stream && !target) ||
             tokenOriginMismatch ||
-            (!trustedOrigin && configured)}
+            ((!!stream || !trustedOrigin) && configured)}
           onclick={save}
         >
-          {#if !trustedOrigin}
+          {#if stream}
+            {t('print-queue.setup.useDirectCamera')}
+          {:else if !trustedOrigin}
             {t('print-queue.save')}
           {:else if configured && credentialConfigured}
             {t('print-queue.setup.reconnect')}

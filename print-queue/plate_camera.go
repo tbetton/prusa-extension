@@ -138,8 +138,7 @@ func decodePlateJPEG(raw []byte) (image.Image, error) {
 		return nil, errors.New("invalid camera snapshot size")
 	}
 	config, err := jpeg.DecodeConfig(bytes.NewReader(raw))
-	if err != nil || config.Width < 320 || config.Height < 240 ||
-		config.Width > 1920 || config.Height > 1920 || config.Width*config.Height > 1920*1080 {
+	if err != nil || !plateDimensions(config.Width, config.Height) {
 		return nil, errors.New("camera snapshot dimensions must be between 320x240 and 2 megapixels")
 	}
 	img, err := jpeg.Decode(bytes.NewReader(raw))
@@ -147,6 +146,10 @@ func decodePlateJPEG(raw []byte) (image.Image, error) {
 		return nil, errors.New("the camera returned an invalid JPEG")
 	}
 	return img, nil
+}
+
+func plateDimensions(width, height int) bool {
+	return width >= 320 && height >= 240 && width <= 1920 && height <= 1920 && width*height <= 1920*1080
 }
 
 // plateMatch uses the entire fixed camera view. Local blocks catch changes

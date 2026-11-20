@@ -72,6 +72,30 @@ func TestPlateComparisonRejectsLocalObstruction(t *testing.T) {
 	}
 }
 
+func TestPlateRTSPAddressIsScopedToTheSelectedLANCamera(t *testing.T) {
+	for _, address := range []string{
+		"rtsp://10.0.10.153/live",
+		"rtsp://192.168.1.100:8554/live",
+		"rtsp://[fd00::1234]/live",
+	} {
+		if _, _, err := plateRTSPAddress(address); err != nil {
+			t.Errorf("expected LAN address %s: %v", address, err)
+		}
+	}
+	for _, address := range []string{
+		"rtsp://user:secret@10.0.10.153/live",
+		"rtsp://camera.example/live",
+		"rtsp://10.0.10.153:22/live",
+		"rtsp://203.0.113.1/live",
+		"rtsp://127.0.0.1/live",
+		"http://10.0.10.153/live",
+	} {
+		if _, _, err := plateRTSPAddress(address); err == nil {
+			t.Errorf("unexpected valid RTSP address %s", address)
+		}
+	}
+}
+
 func TestPlateCheckAutomaticAndObservation(t *testing.T) {
 	for _, automatic := range []bool{false, true} {
 		name := "observation"

@@ -11,6 +11,35 @@ func (m *module) mayConfigurePlate(ctx context.Context, principal, id string) bo
 	return m.allowed(ctx, principal, "operate", "device", id)
 }
 
+func (m *module) previewPlate(w http.ResponseWriter, r *http.Request) {
+	if m.ready(w, r) == nil {
+		return
+	}
+	id := r.PathValue("id")
+	if !m.allowed(r.Context(), routesapi.PrincipalOf(r), "observe", "device", id) {
+		refuse(w, r, NoDevice.New("printer unavailable"))
+		return
+	}
+	sc := m.scheduler
+	sc.mu.Lock()
+	p := sc.plate
+	configured := p != nil && p.settings.Device == id
+	sc.mu.Unlock()
+	if !configured {
+		refuse(w, r, NoDevice.New("no plate camera for this printer"))
+		return
+	}
+	frame, err := p.snapshot(r.Context())
+	if err != nil {
+		refuse(w, r, PlateCheckUnavailable.New(err.Error()))
+		return
+	}
+	w.Header().Set("Content-Type", "image/jpeg")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	_, _ = w.Write(frame.jpeg)
+}
+
 func (m *module) plateViews(ctx context.Context, principal, device string) map[string]plateView {
 	sc := m.scheduler
 	views := make(map[string]plateView)

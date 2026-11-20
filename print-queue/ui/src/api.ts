@@ -143,6 +143,9 @@ export const setPaused = (deviceId: string, paused: boolean): Promise<void> =>
 export const markPrinterReady = (deviceId: string): Promise<void> =>
   call('POST', `/devices/${encodeURIComponent(deviceId)}/ready`, { plate_empty: true });
 
+export const platePreviewURL = (deviceId: string): string =>
+  `${BASE}/devices/${encodeURIComponent(deviceId)}/plate-preview`;
+
 export const updatePlateCheck = (
   deviceId: string,
   settings:
