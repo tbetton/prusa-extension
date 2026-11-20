@@ -7,7 +7,6 @@ const BASE = (() => {
   return match?.[1] ?? '/api/v1/modules/com.github.aux.tbetton.print-queue';
 })();
 
-export const moduleNamespace = decodeURIComponent(BASE.slice(BASE.lastIndexOf('/') + 1));
 
 export interface Job {
   id: string;
@@ -30,18 +29,8 @@ export interface Job {
 export interface Queue {
   jobs: Job[];
   paused: Record<string, boolean>;
-  plate_checks?: Record<string, PlateCheck>;
+  ready_confirmation_required?: Record<string, boolean>;
   problem?: string;
-}
-
-export interface PlateCheck {
-  automatic: boolean;
-  reference_at?: string;
-  last_match_at?: string;
-  status: string;
-  can_configure: boolean;
-  profile_count?: number;
-  calibration?: { captured: number; target: number; failed?: boolean; issue?: string };
 }
 
 export class QueueError extends Error {
@@ -142,17 +131,6 @@ export const setPaused = (deviceId: string, paused: boolean): Promise<void> =>
 
 export const markPrinterReady = (deviceId: string): Promise<void> =>
   call('POST', `/devices/${encodeURIComponent(deviceId)}/ready`, { plate_empty: true });
-
-export const platePreviewURL = (deviceId: string): string =>
-  `${BASE}/devices/${encodeURIComponent(deviceId)}/plate-preview`;
-
-export const updatePlateCheck = (
-  deviceId: string,
-  settings:
-    | { action: 'start_calibration' | 'cancel_calibration' }
-    | { action: 'set_automatic'; automatic: boolean },
-  signal?: AbortSignal,
-): Promise<void> => call('POST', `/devices/${encodeURIComponent(deviceId)}/plate-check`, settings, signal);
 
 /**
  * The address of a file's picture: from the server's storage, or from the

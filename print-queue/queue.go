@@ -106,10 +106,10 @@ func (j Job) finished() bool {
 
 // snapshot is everything the module keeps, written whole to one file.
 type snapshot struct {
-	Jobs       []Job                 `json:"jobs"`
-	Paused     map[string]bool       `json:"paused"`
-	Cursor     string                `json:"cursor,omitempty"`
-	PlateReady map[string]plateReady `json:"plate_ready,omitempty"`
+	Jobs             []Job                  `json:"jobs"`
+	Paused           map[string]bool        `json:"paused"`
+	Cursor           string                 `json:"cursor,omitempty"`
+	UnconfirmedReady map[string]readyMarker `json:"plate_ready,omitempty"`
 }
 
 func (data *snapshot) nextQueued(deviceID string, now time.Time) *Job {
@@ -205,7 +205,7 @@ func (s *Store) update(change func(*snapshot) error) error {
 
 	next := snapshot{
 		Jobs: slices.Clone(s.data.Jobs), Paused: maps.Clone(s.data.Paused),
-		Cursor: s.data.Cursor, PlateReady: maps.Clone(s.data.PlateReady),
+		Cursor: s.data.Cursor, UnconfirmedReady: maps.Clone(s.data.UnconfirmedReady),
 	}
 	if err := change(&next); err != nil {
 		return err
@@ -246,8 +246,9 @@ func trim(jobs []Job, keep int) []Job {
 
 // View is what the routes answer for one printer, or for all of them.
 type View struct {
-	Jobs   []Job           `json:"jobs"`
-	Paused map[string]bool `json:"paused"`
+	Jobs                      []Job           `json:"jobs"`
+	Paused                    map[string]bool `json:"paused"`
+	ReadyConfirmationRequired map[string]bool `json:"ready_confirmation_required,omitempty"`
 }
 
 // List answers the jobs of one printer in queue order, or of every printer
@@ -269,6 +270,14 @@ func (s *Store) List(device string) View {
 			view.Paused[id] = true
 		}
 	}
+	for id := range s.data.UnconfirmedReady {
+		if device == "" || id == device {
+			if view.ReadyConfirmationRequired == nil {
+				view.ReadyConfirmationRequired = make(map[string]bool)
+			}
+			view.ReadyConfirmationRequired[id] = true
+		}
+	}
 
 	return view
 }
@@ -276,6 +285,9 @@ func (s *Store) List(device string) View {
 func (v View) deviceIDs() []string {
 	ids := make(map[string]struct{}, len(v.Paused))
 	for id := range v.Paused {
+		ids[id] = struct{}{}
+	}
+	for id := range v.ReadyConfirmationRequired {
 		ids[id] = struct{}{}
 	}
 	for _, job := range v.Jobs {
@@ -474,7 +486,6 @@ type Scheduler struct {
 	logf         func(format string, args ...any)
 	authorize    func(context.Context, Job) error
 	command      func(context.Context, deviceapi.CommandParams) (deviceapi.Result, error)
-	plate        *plateCheck
 	mu           sync.Mutex // orders dispatch and stream windows
 	following    bool
 }
@@ -518,13 +529,10 @@ func (sc *Scheduler) devicesWithWork() []string {
 			devices = append(devices, job.DeviceID)
 		}
 	}
-	for id := range sc.store.data.PlateReady {
+	for id := range sc.store.data.UnconfirmedReady {
 		if !slices.Contains(devices, id) {
 			devices = append(devices, id)
 		}
-	}
-	if sc.plate != nil && !slices.Contains(devices, sc.plate.settings.Device) {
-		devices = append(devices, sc.plate.settings.Device)
 	}
 
 	return devices
@@ -545,22 +553,7 @@ func (sc *Scheduler) tickDevice(ctx context.Context, deviceID string) {
 	state := printerState(device)
 	now = sc.now().UTC()
 	available := err == nil && device.Connected && !device.Retired
-	plate := sc.plate
-	if plate != nil && plate.settings.Device != deviceID {
-		plate = nil
-	}
-	if plate != nil && plate.calibration != nil {
-		plate.updateCalibration(ctx, sc, device)
-		return
-	}
-	permit := platePermit{}
-	if plate != nil && available && state == printerReady && platePrinterAvailable(device) &&
-		plate.permit.job != "" && plate.permit.epoch == device.CapabilityEpoch && now.Before(plate.permit.expires) &&
-		plate.settings.EnabledBy != "" && plate.mayEnable(ctx, plate.settings.EnabledBy, deviceID) {
-		permit = plate.permit
-	}
-
-	var next, candidate *Job
+	var next *Job
 	guarded := false
 
 	busy := false
@@ -588,16 +581,16 @@ func (sc *Scheduler) tickDevice(ctx context.Context, deviceID string) {
 			}
 		}
 
-		marker, exists := data.PlateReady[deviceID]
+		marker, exists := data.UnconfirmedReady[deviceID]
 		guarded = exists
 		if available && exists {
 			switch state {
 			case printerReady:
 				marker.Seen = true
-				data.PlateReady[deviceID] = marker
+				data.UnconfirmedReady[deviceID] = marker
 			case "IDLE", "FINISHED", "PRINTING", "STOPPED":
 				if marker.Seen {
-					delete(data.PlateReady, deviceID)
+					delete(data.UnconfirmedReady, deviceID)
 					guarded = false
 				}
 			}
@@ -609,14 +602,7 @@ func (sc *Scheduler) tickDevice(ctx context.Context, deviceID string) {
 		if job == nil {
 			return nil
 		}
-		if state != printerReady {
-			if !guarded && plate != nil {
-				copied := *job
-				candidate = &copied
-			}
-			return nil
-		}
-		if guarded && (permit.job != job.ID || !sc.now().Before(permit.expires)) {
+		if state != printerReady || guarded {
 			return nil
 		}
 		// Save the attempt before any printer call, including the unique
@@ -638,29 +624,6 @@ func (sc *Scheduler) tickDevice(ctx context.Context, deviceID string) {
 		return
 	}
 
-	if plate != nil {
-		switch {
-		case guarded && available && state == printerReady && (next != nil || !busy):
-			plate.permit = platePermit{}
-			if next == nil {
-				plate.reset("readyBlocked")
-			} else {
-				plate.reset("waiting")
-			}
-		case guarded && (plate.permit.job == "" || !available || device.CapabilityEpoch != plate.permit.epoch ||
-			!now.Before(plate.permit.expires)):
-			plate.permit = platePermit{}
-			plate.reset("readyBlocked")
-		case candidate != nil:
-			plate.permit = platePermit{}
-			sc.checkPlate(ctx, device, *candidate)
-		case !guarded:
-			plate.permit = platePermit{}
-			if plate.hasReference() {
-				plate.reset("waiting")
-			}
-		}
-	}
 	if next != nil {
 		sc.start(ctx, *next)
 	}

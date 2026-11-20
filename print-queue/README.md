@@ -1,6 +1,6 @@
 # Print Queue for Prusa Connect Local
 
-Print Queue manages a separate queue for each printer. When a printer reports **READY**, the extension starts the next eligible job from server storage or the printer's drive. By default you clear the build plate and confirm on the printer. You can schedule a job to wait until a given time.
+Print Queue manages a separate queue for each printer. When a printer reports **READY**, the extension starts the next eligible job from server storage or the printer's drive. Clear the build plate and confirm readiness on the printer or with **Mark as ready**. You can schedule a job to wait until a given time.
 
 - Open **Print Queue** in the sidebar to see all printers or open the **Print Queue** tab on a printer's page.
 - Use **Add to the print queue** in the action menu for a file in server storage.
@@ -25,7 +25,7 @@ The **Prusa Marketplace** GitHub workflow runs a dry run after each push to `mai
 
 ## Printer permissions
 
-The `-approve` flag authorizes the permissions declared by the module. To start jobs automatically, an administrator must explicitly grant the extension the operator role on each selected printer.
+The `-approve` flag authorizes the permissions declared by the module. To dispatch queued jobs after the printer reports READY, an administrator must explicitly grant the extension the operator role on each selected printer.
 
 ```text
 POST /api/v1/grants/device/<printer-id>
@@ -42,20 +42,6 @@ Print Queue tracks transfer and print events from Prusa Connect. When an event i
 
 When the result of a start command is uncertain, Print Queue marks the job as Unconfirmed and holds that printer's queue. The result updates when Jobs confirms it. Check the printer and clear the plate if needed before resuming the queue.
 
-## Build plate check
-
-Turn **Enable build plate check** on or off in **Settings → Extensions → Print Queue → Build plate check**. The saved reference and automatic readiness preference are restored when the check is enabled again. **Mark as ready** remains available when the camera check is off.
-
-1. Open **Settings → Extensions → Print Queue → Build plate check**, select the printer and its RTSP camera, then click **Use direct camera**. Print Queue reads H.264 video from the stream already declared in Prusa Connect and creates its own JPEGs on demand. Use a private LAN IP on RTSP port 554 or 8554, with no embedded credentials or query parameters.
-2. Clear the plate and check the preview. Choose **Confirm empty plate and calibrate** while the printer is idle or finished. Keep the printer and lighting steady while Print Queue collects three fresh images. You can calibrate again for another printer state or lighting condition. Print Queue keeps the two most recent calibration sets per state, plus any reference saved before this update. Test with automatic starts off and an eligible job queued, with the plate both empty and occupied.
-3. To opt in, select **Allow automatic starts after the plate check**. With an eligible job queued, Print Queue checks the plate when the printer is **IDLE** or **FINISHED**. Prusa Connect must report no active print and, if there is a previous job, a successful result. **FINISHED** always requires a recorded successful print. Two fresh matching pictures at least 30 seconds apart are required before requesting **READY**. Print Queue waits for the printer to report **READY** before sending the job. Capturing a replacement reference turns automatic starts off.
-
-When upgrading from an HTTPS or HTTP snapshot source, select the RTSP camera and calibrate the empty plate for that stream. For instances defined in a server configuration file, remove the obsolete `plate_camera_url` and `plate_camera_token` keys. Revoke any personal credential named **Print Queue camera** that earlier versions created in **Settings → API credentials**.
-
-Use a fixed camera that sees the entire build plate, with steady lighting and a clear view. The check compares the whole frame and can miss small or hidden objects. Both images must fit a common calibration set for that printer state or the saved reference for the same stream. After the first match, Print Queue can retry an unavailable, stale, or identical capture for up to 60 seconds from that match. It uses fresh H.264 keyframes and supports images from 320 × 240 up to two megapixels. The calibration stays in the extension's data directory.
-
-If the automatic READY request becomes uncertain, hold the queue and check the printer in person. While the queue is held, let Print Queue observe **READY** and then its cancellation before resuming normal operation. Keep each state up for at least one polling interval. Clear the plate before confirming **READY** again.
-
 ## Settings
 
 Open **Settings → Extensions → Print Queue**.
@@ -66,6 +52,3 @@ Open **Settings → Extensions → Print Queue**.
 | `start_timeout_minutes` | 30 | Maximum time between dispatch and the start of a print, in minutes |
 | `printer_folder` | usb | Destination folder on the printer |
 | `keep_history` | 20 | Number of finished jobs retained per printer |
-| `plate_check_enabled` | true | Enable the camera-based build plate check |
-| `plate_check_printer` | unset | Device ID of the printer to check |
-| `plate_camera_stream` | unset | Private LAN H.264 RTSP address selected from Prusa Connect camera settings |

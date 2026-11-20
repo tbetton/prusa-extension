@@ -79,13 +79,6 @@ var (
 		fault.ShowDetail,
 	))
 
-	PlateCheckUnavailable = fault.Register(faultDomain, "PLATE_CHECK_UNAVAILABLE", http.StatusConflict, fault.Document(
-		"The plate check could not be configured",
-		"Check the printer and camera in Print Queue, then try again.",
-		fault.RetryAllowed,
-		fault.ShowDetail,
-	))
-
 	ReadyUnavailable = fault.Register(faultDomain, "READY_UNAVAILABLE", http.StatusConflict, fault.Document(
 		"The printer could not be marked ready",
 		"Check the printer state and try again.",

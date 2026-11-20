@@ -6,7 +6,7 @@
 
 name: print-queue
 kind: sink
-version: 0.1.33
+version: 0.1.34
 license: MIT
 title: Print Queue
 summary: Queue and schedule prints for each printer.
@@ -49,24 +49,6 @@ options:
     type: int
     default: "20"
     summary: Finished jobs kept per printer.
-  - key: plate_check_enabled
-    type: bool
-    default: "true"
-    summary: Enable the camera-based build plate check.
-  - key: plate_check_printer
-    type: string
-    summary: Device ID of the printer covered by the optional plate check.
-  - key: plate_camera_stream
-    type: string
-    summary: Optional LAN H.264 RTSP source selected in Build plate check.
-
-egress:
-  - option: plate_camera_stream
-    ports: [554, 8554]
-    from: process
-    why: Reads a camera keyframe for a build plate snapshot.
-    sends: Opens a TCP RTSP session to the selected LAN camera.
-
 needs:
   memory_mib: 64
   # queue.json is kept here, so the queue survives a restart.
@@ -87,9 +69,6 @@ ui:
   entry: ui/index.js
   library: ">=0.1.0 <1.0.0"
   contributes:
-    settings:
-      - id: plate-check
-        title: Build plate check
     pages:
       - path: print-queue
         title: Print Queue

@@ -168,7 +168,7 @@
       jobsOf(id).some((job) => job.status === 'starting' || job.status === 'printing')) {
       return 'printing';
     }
-    if (state === 'READY') return 'ready';
+    if (state === 'READY') return queue?.ready_confirmation_required?.[id] ? 'available' : 'ready';
     if (device.capabilities?.includes('core.command.set_printer_ready') !== true ||
       (state !== 'IDLE' && state !== 'FINISHED' && state !== 'STOPPED')) {
       return 'unavailable';
@@ -433,7 +433,6 @@
         {@const slots = slotsOf(printer)}
         {@const jobs = slots.map((slot) => slot.job)}
         {@const paused = queue?.paused[printer] === true}
-        {@const plate = queue?.plate_checks?.[printer]}
         {@const factor = factors[printer] ?? 1}
         {@const readiness = manualReadiness(printer)}
         {@const readinessNotice = readiness && readiness !== 'available' && readiness !== 'printing' ? readiness : undefined}
@@ -446,12 +445,6 @@
                 {/if}
                 {#if stateOf(printer)}
                   <Badge variant="outline">{stateOf(printer)}</Badge>
-                {/if}
-                {#if plate?.automatic}
-                  <Badge variant="info">{t('print-queue.plate.autoBadge')}</Badge>
-                {/if}
-                {#if plate?.status === 'readyBlocked'}
-                  <Badge variant="warning">{t('print-queue.plate.status.readyBlocked')}</Badge>
                 {/if}
                 {#if paused}
                   <Badge variant="warning">{t('print-queue.queueHeld')}</Badge>
@@ -486,6 +479,9 @@
               <p class="text-xs text-muted-foreground" id={`ready-status-${printer}`}>
                 {t(`print-queue.markReady.status.${readinessNotice}`)}
               </p>
+            {/if}
+            {#if queue?.ready_confirmation_required?.[printer]}
+              <p class="text-sm text-warning">{t('print-queue.markReady.confirmRequired')}</p>
             {/if}
             {#if paused}
               <p class="text-sm text-warning">{t('print-queue.pausedHint')}</p>
