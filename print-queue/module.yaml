@@ -6,7 +6,7 @@
 
 name: print-queue
 kind: sink
-version: 0.1.35
+version: 0.2.1
 license: MIT
 title: Print Queue
 summary: Queue and schedule prints for each printer.
@@ -45,6 +45,10 @@ options:
     type: string
     default: "usb"
     summary: Destination folder on the printer.
+  - key: slicer_upload_folder
+    type: string
+    default: print-queue
+    summary: Folder in Connect Local storage for files sent from PrusaSlicer.
   - key: keep_history
     type: int
     default: "20"

@@ -32,7 +32,7 @@ func TestQueueRoutesUseTheCallersPrinterGrants(t *testing.T) {
 	if err := store.SetPaused("p2", true); err != nil {
 		t.Fatal(err)
 	}
-	routes := (&module{store: store, access: queueAccess{}}).routes()
+	routes := (&module{store: store, access: queueAccess{}, slicerUploadFolder: "from-slicer/jobs"}).routes()
 
 	request := func(method, path, principal, body string) *httptest.ResponseRecorder {
 		t.Helper()
@@ -54,10 +54,20 @@ func TestQueueRoutesUseTheCallersPrinterGrants(t *testing.T) {
 		t.Fatalf("unexpected queue for viewer: %d %+v", list.Code, view)
 	}
 
+	destination := request("GET", "/devices/p1/slicer-upload", "user:operator", "")
+	var upload map[string]string
+	if err := json.Unmarshal(destination.Body.Bytes(), &upload); err != nil {
+		t.Fatal(err)
+	}
+	if destination.Code != http.StatusOK || upload["folder"] != "from-slicer/jobs" {
+		t.Fatalf("unexpected slicer destination: %d %+v", destination.Code, upload)
+	}
+
 	for _, test := range []struct {
 		method, path, principal, body string
 		want                          int
 	}{
+		{"GET", "/devices/p1/slicer-upload", "user:viewer", "", http.StatusForbidden},
 		{"GET", "/jobs?device=p2", "user:viewer", "", http.StatusNotFound},
 		{"DELETE", "/jobs/" + hidden.ID, "user:operator", "", http.StatusNotFound},
 		{"DELETE", "/jobs/" + visible.ID, "user:viewer", "", http.StatusForbidden},

@@ -7,6 +7,11 @@ Write the entry in the same change as the code. One bullet per behaviour a
 person outside this repository can observe: a route, a setting, a screen, a
 refusal. Name the route and the setting key, never a function or a file.
 
+## 0.2.1
+
+- Configure `slicer_upload_folder` in Print Queue for files sent from PrusaSlicer.
+- Read that folder using `GET /devices/{id}/slicer-upload` with permission to operate the target printer.
+
 ## 0.1.35
 
 - Use the Prusa Connect client for the USB file picker and print history, improving compatibility with changes to server paths and authentication.

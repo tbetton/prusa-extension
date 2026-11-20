@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"math"
 	"net/http"
 	"os"
@@ -33,7 +34,7 @@ import (
 
 const (
 	name    = "print-queue"
-	release = extension.Version("0.1.35")
+	release = extension.Version("0.2.1")
 )
 
 // Settings is what an operator writes under this instance's config block. The
@@ -43,6 +44,7 @@ type Settings struct {
 	StartTimeoutMinutes int    `json:"start_timeout_minutes"`
 	PrinterFolder       string `json:"printer_folder"`
 	KeepHistory         int    `json:"keep_history"`
+	SlicerUploadFolder  string `json:"slicer_upload_folder"`
 }
 
 func (s Settings) withDefaults() Settings {
@@ -57,6 +59,11 @@ func (s Settings) withDefaults() Settings {
 	s.PrinterFolder = strings.Trim(s.PrinterFolder, "/")
 	if s.PrinterFolder == "" {
 		s.PrinterFolder = "usb"
+	}
+
+	s.SlicerUploadFolder = strings.Trim(strings.TrimSpace(s.SlicerUploadFolder), "/")
+	if s.SlicerUploadFolder == "" {
+		s.SlicerUploadFolder = "print-queue"
 	}
 
 	if s.KeepHistory < 0 {
@@ -78,14 +85,15 @@ func main() {
 
 // module ties the session, the store and the scheduler together.
 type module struct {
-	mu        sync.Mutex
-	access    accessapi.Access
-	conn      *wirerpc.Conn
-	store     *Store
-	devices   *deviceapi.Client
-	files     *storageapi.Client
-	scheduler *Scheduler
-	ctx       context.Context
+	mu                 sync.Mutex
+	access             accessapi.Access
+	conn               *wirerpc.Conn
+	store              *Store
+	devices            *deviceapi.Client
+	files              *storageapi.Client
+	scheduler          *Scheduler
+	slicerUploadFolder string
+	ctx                context.Context
 }
 
 func logf(format string, args ...any) {
@@ -158,6 +166,10 @@ func (m *module) methods() wirerpc.Methods {
 // configure opens the store in the data directory and starts the loop.
 func (m *module) configure(_ context.Context, sent Settings, grants wirerpc.Grants) error {
 	settings := sent.withDefaults()
+	if !fs.ValidPath(settings.SlicerUploadFolder) || settings.SlicerUploadFolder == "." ||
+		strings.Contains(settings.SlicerUploadFolder, "\\") {
+		return errors.New("print-queue: slicer_upload_folder must be relative to the Connect storage")
+	}
 	if int64(settings.PollSeconds) > math.MaxInt64/int64(3*time.Second) ||
 		int64(settings.StartTimeoutMinutes) > math.MaxInt64/int64(time.Minute) {
 		return errors.New("print-queue: a configured duration is too long")
@@ -180,6 +192,7 @@ func (m *module) configure(_ context.Context, sent Settings, grants wirerpc.Gran
 	}
 
 	m.store = store
+	m.slicerUploadFolder = settings.SlicerUploadFolder
 	m.scheduler = &Scheduler{
 		store:        store,
 		fleet:        m.devices,
@@ -285,6 +298,15 @@ func (m *module) routes() http.Handler {
 			}
 		}
 		answer(w, http.StatusOK, view)
+	})
+
+	mux.HandleFunc("GET /devices/{id}/slicer-upload", func(w http.ResponseWriter, r *http.Request) {
+		if m.ready(w, r) == nil || !m.requireOperate(w, r, r.PathValue("id")) {
+			return
+		}
+		answer(w, http.StatusOK, struct {
+			Folder string `json:"folder"`
+		}{Folder: m.slicerUploadFolder})
 	})
 
 	mux.HandleFunc("POST /devices/{id}/ready", m.markReady)
