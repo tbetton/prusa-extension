@@ -134,6 +134,11 @@
               {t('print-queue.plate.calibrationFailed')}
             </p>
           {/if}
+          {#if plate.calibration?.issue}
+            <p class="text-sm text-muted-foreground">
+              {t(`print-queue.plate.calibrationIssue.${plate.calibration.issue}`)}
+            </p>
+          {/if}
           {#if calibrating && plate.calibration}
             <p role="status" class="text-sm">
               {t('print-queue.plate.calibrationProgress', {

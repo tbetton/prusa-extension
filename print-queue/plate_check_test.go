@@ -255,8 +255,13 @@ func TestPlateCalibrationSavesACompleteSetOrKeepsThePreviousOne(t *testing.T) {
 	start()
 	obstruction = true
 	tick()
-	if p.calibration != nil || !p.calibrationFailed || len(p.profiles) != 1 {
-		t.Fatal("a changed plate should cancel the new calibration and retain the saved one")
+	if p.calibration == nil || p.calibration.issue != "imageChanged" || len(p.calibration.frames) != 1 {
+		t.Fatal("a changed plate should be excluded while the calibration retries")
+	}
+	clock.at = p.calibration.expires
+	sc.Tick(t.Context())
+	if p.calibration != nil || p.calibrationFailure != "imageChanged" || len(p.profiles) != 1 {
+		t.Fatal("the expired calibration should keep the previous set and report the rejected frame")
 	}
 	reloaded, err := openPlateCheck(dir, settings, clock.now)
 	if err != nil {
@@ -266,6 +271,25 @@ func TestPlateCalibrationSavesACompleteSetOrKeepsThePreviousOne(t *testing.T) {
 		reloaded.matchingProfiles("IDLE", platePhoto(level, true)) != 0 ||
 		reloaded.matchingProfiles("FINISHED", platePhoto(level, false)) != 0 {
 		t.Fatal("the saved set must recognize an empty plate only in its learned printer state")
+	}
+}
+
+func TestPlateCalibrationToleratesOnlyUniformExposure(t *testing.T) {
+	reference := platePhoto(45, false)
+	exposed := platePhoto(45, false)
+	for i := range exposed.Pix {
+		exposed.Pix[i] += 10
+	}
+	if plateMatch(reference, exposed) || !plateCalibrationMatch(reference, exposed) {
+		t.Fatal("only calibration should normalize a small exposure shift")
+	}
+	for x := 145; x < 152; x++ {
+		for y := 144; y < 155; y++ {
+			exposed.SetGray(x, y, color.Gray{Y: 140})
+		}
+	}
+	if plateCalibrationMatch(reference, exposed) {
+		t.Fatal("exposure normalization must not hide a local obstruction")
 	}
 }
 

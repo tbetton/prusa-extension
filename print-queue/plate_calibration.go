@@ -40,12 +40,14 @@ type plateCalibration struct {
 	operator string
 	expires  time.Time
 	frames   []plateFrame
+	issue    string
 }
 
 type plateCalibrationView struct {
-	Captured int  `json:"captured"`
-	Target   int  `json:"target"`
-	Failed   bool `json:"failed,omitempty"`
+	Captured int    `json:"captured"`
+	Target   int    `json:"target"`
+	Failed   bool   `json:"failed,omitempty"`
+	Issue    string `json:"issue,omitempty"`
 }
 
 func decodePlateProfiles(saved []savedPlateProfile) ([]plateProfile, error) {
@@ -104,7 +106,7 @@ func (p *plateCheck) startCalibration(ctx context.Context, sc *Scheduler, operat
 	p.permit = platePermit{}
 	p.lastMatch = nil
 	p.reset("waiting")
-	p.calibrationFailed = false
+	p.calibrationFailure = ""
 	p.calibration = &plateCalibration{
 		context: capture, operator: operator, expires: sc.now().Add(plateCalibrationLimit),
 		frames: []plateFrame{first},
@@ -115,10 +117,17 @@ func (p *plateCheck) startCalibration(ctx context.Context, sc *Scheduler, operat
 func (p *plateCheck) updateCalibration(ctx context.Context, sc *Scheduler, device deviceapi.Device) {
 	calibration := p.calibration
 	now := sc.now()
-	if !now.Before(calibration.expires) || !platePrinterAvailable(device) ||
-		printerState(device) != calibration.context.state || device.CapabilityEpoch != calibration.context.epoch ||
-		!p.mayEnable(ctx, calibration.operator, p.settings.Device) {
-		p.calibration, p.calibrationFailed = nil, true
+	if !now.Before(calibration.expires) {
+		p.expireCalibration()
+		return
+	}
+	if !platePrinterAvailable(device) || printerState(device) != calibration.context.state ||
+		device.CapabilityEpoch != calibration.context.epoch {
+		p.calibration, p.calibrationFailure = nil, "printerChanged"
+		return
+	}
+	if !p.mayEnable(ctx, calibration.operator, p.settings.Device) {
+		p.calibration, p.calibrationFailure = nil, "permission"
 		return
 	}
 	last := calibration.frames[len(calibration.frames)-1]
@@ -126,19 +135,29 @@ func (p *plateCheck) updateCalibration(ctx context.Context, sc *Scheduler, devic
 		return
 	}
 	frame, capture, err := p.referenceFrame(ctx, sc, false)
-	if err != nil {
+	if !sc.now().Before(calibration.expires) {
+		p.expireCalibration()
 		return
 	}
-	if capture != calibration.context || !plateMatch(calibration.frames[0].image, frame.image) ||
-		!sc.now().Before(calibration.expires) {
-		p.calibration, p.calibrationFailed = nil, true
+	if err != nil {
+		calibration.issue = "noFreshFrame"
+		return
+	}
+	if capture != calibration.context {
+		p.calibration, p.calibrationFailure = nil, "printerChanged"
 		return
 	}
 	if frame.taken.Sub(last.taken) < plateCalibrationGap || slices.ContainsFunc(calibration.frames, func(previous plateFrame) bool {
 		return previous.sum == frame.sum
 	}) {
+		calibration.issue = "noFreshFrame"
 		return
 	}
+	if !plateCalibrationMatch(calibration.frames[0].image, frame.image) {
+		calibration.issue = "imageChanged"
+		return
+	}
+	calibration.issue = ""
 	calibration.frames = append(calibration.frames, frame)
 	if len(calibration.frames) != plateCalibrationFrames {
 		return
@@ -169,9 +188,17 @@ func (p *plateCheck) updateCalibration(ctx context.Context, sc *Scheduler, devic
 	next.Profiles = append(next.Profiles, saved)
 	p.calibration = nil
 	if err := p.save(next); err != nil {
-		p.calibrationFailed = true
+		p.calibrationFailure = "saveFailed"
 		sc.logf("save plate calibration: %v", err)
 		return
 	}
 	p.profiles = append(profiles, profile)
+}
+
+func (p *plateCheck) expireCalibration() {
+	issue := p.calibration.issue
+	if issue == "" {
+		issue = "noFreshFrame"
+	}
+	p.calibration, p.calibrationFailure = nil, issue
 }

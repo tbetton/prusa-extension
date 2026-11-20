@@ -41,7 +41,7 @@ export interface PlateCheck {
   status: string;
   can_configure: boolean;
   profile_count?: number;
-  calibration?: { captured: number; target: number; failed?: boolean };
+  calibration?: { captured: number; target: number; failed?: boolean; issue?: string };
 }
 
 export class QueueError extends Error {

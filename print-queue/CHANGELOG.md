@@ -7,6 +7,10 @@ Write the entry in the same change as the code. One bullet per behaviour a
 person outside this repository can observe: a route, a setting, a screen, a
 refusal. Name the route and the setting key, never a function or a file.
 
+## 0.1.30
+
+- Retry camera frames during plate calibration, tolerate small uniform changes in exposure, and show what prevents calibration from completing.
+
 ## 0.1.29
 
 - Confirm the build plate is empty once to collect three reference photos automatically. Save separate calibration sets for idle and finished printer positions.

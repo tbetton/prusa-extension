@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "print-queue",
-    "version": "0.1.29",
+    "version": "0.1.30",
     "description": "A queue of prints for each printer. Every path is relative to the mount the host assigns."
   },
   "components": {
@@ -19,7 +19,8 @@
             "properties": {
               "captured": { "type": "integer", "minimum": 0 },
               "target": { "type": "integer", "minimum": 0 },
-              "failed": { "type": "boolean" }
+              "failed": { "type": "boolean" },
+              "issue": { "type": "string" }
             },
             "required": ["captured", "target"]
           },

@@ -36,9 +36,11 @@ func (m *module) plateViews(ctx context.Context, principal, device string) map[s
 		}
 		if p.calibration != nil {
 			view.Status = "calibrating"
-			view.Calibration = &plateCalibrationView{Captured: len(p.calibration.frames), Target: plateCalibrationFrames}
-		} else if p.calibrationFailed {
-			view.Calibration = &plateCalibrationView{Failed: true}
+			view.Calibration = &plateCalibrationView{
+				Captured: len(p.calibration.frames), Target: plateCalibrationFrames, Issue: p.calibration.issue,
+			}
+		} else if p.calibrationFailure != "" {
+			view.Calibration = &plateCalibrationView{Failed: true, Issue: p.calibrationFailure}
 		}
 		views[configured] = view
 		sc.mu.Unlock()
@@ -93,7 +95,7 @@ func (m *module) updatePlateCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if body.Action == "cancel_calibration" {
-		p.calibration, p.calibrationFailed = nil, false
+		p.calibration, p.calibrationFailure = nil, ""
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -140,7 +142,7 @@ func (m *module) updatePlateCheck(w http.ResponseWriter, r *http.Request) {
 	p.reference = reference
 	if body.Action == "capture_reference" {
 		p.lastMatch = nil
-		p.calibrationFailed = false
+		p.calibrationFailure = ""
 	}
 	p.permit = platePermit{}
 	switch {

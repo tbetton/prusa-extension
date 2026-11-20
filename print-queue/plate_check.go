@@ -41,18 +41,18 @@ type plateView struct {
 }
 
 type plateCheck struct {
-	settings          plateSettings
-	file              string
-	reference         image.Image
-	profiles          []plateProfile
-	calibration       *plateCalibration
-	calibrationFailed bool
-	status            string
-	lastMatch         *time.Time
-	first             plateSample
-	permit            platePermit
-	snapshot          func(context.Context) (plateFrame, error)
-	mayEnable         func(context.Context, string, string) bool
+	settings           plateSettings
+	file               string
+	reference          image.Image
+	profiles           []plateProfile
+	calibration        *plateCalibration
+	calibrationFailure string
+	status             string
+	lastMatch          *time.Time
+	first              plateSample
+	permit             platePermit
+	snapshot           func(context.Context) (plateFrame, error)
+	mayEnable          func(context.Context, string, string) bool
 }
 
 type plateSample struct {
