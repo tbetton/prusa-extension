@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "print-queue",
-    "version": "0.2.1",
+    "version": "0.1.35",
     "description": "A queue of prints for each printer. Every path is relative to the mount the host assigns."
   },
   "components": {
@@ -71,32 +71,6 @@
     }
   },
   "paths": {
-    "/devices/{id}/slicer-upload": {
-      "get": {
-        "operationId": "get-slicer-upload-destination",
-        "summary": "Read the configured PrusaSlicer upload folder",
-        "description": "Requires permission to operate the target printer. The folder is relative to the Connect Local storage selected by the upload client.",
-        "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
-        ],
-        "responses": {
-          "200": {
-            "description": "The folder in Connect Local storage.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": { "folder": { "type": "string" } },
-                  "required": ["folder"]
-                }
-              }
-            }
-          },
-          "403": { "description": "The caller cannot operate the printer." },
-          "503": { "description": "The module is starting." }
-        }
-      }
-    },
     "/devices/{id}/ready": {
       "post": {
         "operationId": "mark-printer-ready",
