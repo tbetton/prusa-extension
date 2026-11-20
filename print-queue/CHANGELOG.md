@@ -7,6 +7,10 @@ Write the entry in the same change as the code. One bullet per behaviour a
 person outside this repository can observe: a route, a setting, a screen, a
 refusal. Name the route and the setting key, never a function or a file.
 
+## 0.1.28
+
+- Check the build plate and start the next queued job automatically while the printer is idle.
+
 ## 0.1.27
 
 - Retry the second build plate capture if the camera temporarily returns a stale or repeated image.

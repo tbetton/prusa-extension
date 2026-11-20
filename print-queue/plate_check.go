@@ -50,12 +50,18 @@ type plateCheck struct {
 }
 
 type plateSample struct {
-	job      string
+	job     string
+	window  plateWindow
+	epoch   uint64
+	checked time.Time
+	taken   time.Time
+	sum     [32]byte
+}
+
+type plateWindow struct {
+	state    string
 	previous string
-	epoch    uint64
-	checked  time.Time
-	taken    time.Time
-	sum      [32]byte
+	ended    time.Time
 }
 
 type platePermit struct {
@@ -144,8 +150,8 @@ func platePrinterAvailable(device deviceapi.Device) bool {
 	return device.Connected && !device.Retired && device.Dialog == nil && len(device.Issues) == 0
 }
 
-func platePrinterFinished(device deviceapi.Device) bool {
-	return platePrinterAvailable(device) && printerState(device) == "FINISHED" &&
+func platePrinterCanCheck(device deviceapi.Device, state string) bool {
+	return platePrinterAvailable(device) && (state == "FINISHED" || state == "IDLE") &&
 		slices.Contains(device.Capabilities, readyVerb)
 }
 
@@ -157,23 +163,38 @@ func (sc *Scheduler) lastPlatePrint(ctx context.Context, id string) (*deviceapi.
 	return jobs.Last, nil
 }
 
+func (sc *Scheduler) plateWindow(ctx context.Context, id, state string) (plateWindow, bool) {
+	last, err := sc.lastPlatePrint(ctx, id)
+	if err != nil {
+		return plateWindow{}, false
+	}
+	if last == nil && state == "IDLE" {
+		return plateWindow{state: state}, true
+	}
+	if last == nil || last.ID == "" || last.Ended == nil || last.Outcome != event.JobFinished {
+		return plateWindow{}, false
+	}
+	return plateWindow{state: state, previous: last.ID, ended: last.Ended.UTC()}, true
+}
+
 func (sc *Scheduler) checkPlate(ctx context.Context, device deviceapi.Device, next Job) {
 	p := sc.plate
 	if p.reference == nil {
 		p.reset("noReference")
 		return
 	}
-	if !platePrinterFinished(device) {
+	state := printerState(device)
+	if !platePrinterCanCheck(device, state) {
 		p.reset("waiting")
 		return
 	}
-	last, err := sc.lastPlatePrint(ctx, next.DeviceID)
-	if err != nil || last == nil || last.ID == "" || last.Ended == nil || last.Outcome != event.JobFinished {
+	window, ok := sc.plateWindow(ctx, next.DeviceID, state)
+	if !ok {
 		p.reset("waiting")
 		return
 	}
 	first := p.first
-	if first.job != next.ID || first.previous != last.ID || first.epoch != device.CapabilityEpoch {
+	if first.job != next.ID || first.window != window || first.epoch != device.CapabilityEpoch {
 		first = plateSample{}
 	}
 	if !first.checked.IsZero() && sc.now().Sub(first.checked) < plateDelay {
@@ -185,7 +206,7 @@ func (sc *Scheduler) checkPlate(ctx context.Context, device deviceapi.Device, ne
 		first = plateSample{}
 	}
 	p.first = first
-	if err != nil || checked.Sub(shot.taken) > plateMaxAge || !shot.taken.After(*last.Ended) ||
+	if err != nil || checked.Sub(shot.taken) > plateMaxAge || !shot.taken.After(window.ended) ||
 		(!first.checked.IsZero() && shot.sum == first.sum) {
 		p.status = "cameraUnavailable"
 		if !first.checked.IsZero() {
@@ -203,7 +224,7 @@ func (sc *Scheduler) checkPlate(ctx context.Context, device deviceapi.Device, ne
 	}
 	if first.checked.IsZero() {
 		p.first = plateSample{
-			job: next.ID, previous: last.ID, epoch: device.CapabilityEpoch,
+			job: next.ID, window: window, epoch: device.CapabilityEpoch,
 			checked: checked, taken: shot.taken, sum: shot.sum,
 		}
 		p.status = "firstMatch"
@@ -219,14 +240,14 @@ func (sc *Scheduler) checkPlate(ctx context.Context, device deviceapi.Device, ne
 		p.status = "permissionRequired"
 		return
 	}
-	currentLast, err := sc.lastPlatePrint(ctx, next.DeviceID)
-	if err != nil || currentLast == nil || currentLast.ID != last.ID || currentLast.Ended == nil ||
-		currentLast.Outcome != event.JobFinished || !shot.taken.After(*currentLast.Ended) {
+	currentWindow, ok := sc.plateWindow(ctx, next.DeviceID, state)
+	if !ok || currentWindow != window {
 		p.status = "waiting"
 		return
 	}
 	currentDevice, err := sc.fleet.Get(ctx, deviceapi.GetParams{ID: next.DeviceID})
-	if err != nil || !platePrinterFinished(currentDevice) || currentDevice.CapabilityEpoch != device.CapabilityEpoch ||
+	if err != nil || printerState(currentDevice) != state || !platePrinterCanCheck(currentDevice, state) ||
+		currentDevice.CapabilityEpoch != device.CapabilityEpoch ||
 		sc.now().Sub(shot.taken) > plateMaxAge || ctx.Err() != nil {
 		p.status = "waiting"
 		return

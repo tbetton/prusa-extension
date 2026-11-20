@@ -141,6 +141,9 @@ func TestPlateCheckRejectsAnObstructionOrMissingEvidence(t *testing.T) {
 		{"reconnected", func(_ *Store, _ *fakeFleet, sc *Scheduler) {
 			sc.fleet.(*plateFleet).epoch++
 		}},
+		{"state changed", func(_ *Store, fleet *fakeFleet, _ *Scheduler) {
+			fleet.state = "IDLE"
+		}},
 		{"paused", func(store *Store, _ *fakeFleet, _ *Scheduler) {
 			_ = store.SetPaused("p1", true)
 		}},
@@ -161,6 +164,49 @@ func TestPlateCheckRejectsAnObstructionOrMissingEvidence(t *testing.T) {
 			sc.Tick(t.Context())
 			if *commands != 0 || len(fleet.printed) != 0 {
 				t.Fatal("automatic readiness must remain on hold")
+			}
+		})
+	}
+}
+
+func TestPlateCheckStartsFromIdle(t *testing.T) {
+	for _, scenario := range []struct {
+		name     string
+		update   func(*fakeFleet)
+		canStart bool
+	}{
+		{name: "previous print finished", canStart: true},
+		{name: "no previous print", update: func(f *fakeFleet) { f.recent.Last = nil }, canStart: true},
+		{name: "previous print failed", update: func(f *fakeFleet) { f.recent.Last.Outcome = event.JobFailed }},
+		{name: "active print", update: func(f *fakeFleet) { f.recent.Current = &deviceapi.Job{ID: "current"} }},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			store, fleet, sc, clock := setup(t, "IDLE")
+			commands, _ := configurePlateFixture(t, fleet, sc, clock, true)
+			if scenario.update != nil {
+				scenario.update(fleet)
+			}
+			_, _ = store.Add(Job{DeviceID: "p1", Path: "next.bgcode"})
+			sc.Tick(t.Context())
+			if *commands != 0 {
+				t.Fatal("one camera capture cannot authorize READY")
+			}
+			clock.at = clock.at.Add(plateDelay)
+			sc.Tick(t.Context())
+			if !scenario.canStart {
+				if *commands != 0 || len(fleet.printed) != 0 {
+					t.Fatal("IDLE alone must not authorize READY")
+				}
+				return
+			}
+			if *commands != 1 || len(fleet.printed) != 0 {
+				t.Fatal("expected READY to be requested before dispatching the job")
+			}
+			clock.at = clock.at.Add(time.Second)
+			fleet.state = printerReady
+			sc.Tick(t.Context())
+			if len(fleet.printed) != 1 || fleet.printed[0].Path != "next.bgcode" {
+				t.Fatal("expected the queued job after the printer confirmed READY")
 			}
 		})
 	}
