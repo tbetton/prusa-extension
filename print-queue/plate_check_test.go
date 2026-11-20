@@ -96,6 +96,43 @@ func TestPlateRTSPAddressIsScopedToTheSelectedLANCamera(t *testing.T) {
 	}
 }
 
+func TestRTSPComparisonSuppressesNoiseButRejectsALocalChange(t *testing.T) {
+	reference := image.NewGray(image.Rect(0, 0, 1280, 720))
+	noisy := image.NewGray(reference.Bounds())
+	for y := range 720 {
+		for x := range 1280 {
+			level := uint8(55)
+			if x < 100 {
+				level = 150
+			}
+			reference.SetGray(x, y, color.Gray{Y: level})
+			noisy.SetGray(x, y, color.Gray{Y: level})
+		}
+	}
+	for y := 368; y < 384; y++ {
+		for x := 448; x < 464; x++ {
+			level := uint8(43)
+			if (x+y)%2 == 0 {
+				level = 67
+			}
+			noisy.SetGray(x, y, color.Gray{Y: level})
+		}
+	}
+	referenceImage := plateRTSPComparison(reference)
+	if referenceImage.Bounds().Dx() != 640 || referenceImage.Bounds().Dy() != 360 ||
+		plateMatch(reference, noisy) || !plateMatch(referenceImage, plateRTSPComparison(noisy)) {
+		t.Fatal("the comparison should average fine RTSP noise")
+	}
+	for y := 288; y < 310; y++ {
+		for x := 290; x < 304; x++ {
+			noisy.SetGray(x, y, color.Gray{Y: 150})
+		}
+	}
+	if plateMatch(referenceImage, plateRTSPComparison(noisy)) {
+		t.Fatal("the comparison must reject a small obstruction after averaging")
+	}
+}
+
 func TestPlateCheckAutomaticAndObservation(t *testing.T) {
 	for _, automatic := range []bool{false, true} {
 		name := "observation"

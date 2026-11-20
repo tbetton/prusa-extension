@@ -47,6 +47,7 @@ type plateCheck struct {
 	profiles           []plateProfile
 	calibration        *plateCalibration
 	calibrationFailure string
+	directRTSP         bool
 	status             string
 	lastMatch          *time.Time
 	first              plateSample
@@ -101,12 +102,17 @@ func openPlateCheck(dir string, settings Settings, now func() time.Time) (*plate
 			return nil, err
 		}
 		p.settings.Camera = address.String()
+		p.directRTSP = true
 		gate := make(chan struct{}, 1)
 		p.snapshot = func(ctx context.Context) (plateFrame, error) {
 			select {
 			case gate <- struct{}{}:
 				defer func() { <-gate }()
-				return readPlateRTSP(ctx, address, peer, now)
+				frame, err := readPlateRTSP(ctx, address, peer, now)
+				if err == nil {
+					frame.image = p.comparisonImage(frame.image)
+				}
+				return frame, err
 			default:
 				return plateFrame{}, errors.New("the RTSP camera is already capturing an image")
 			}
@@ -147,8 +153,9 @@ func (p *plateCheck) load() error {
 		if err != nil || saved.ReferenceAt.IsZero() || !usablePlateImage(ref) {
 			return errors.New("invalid saved plate reference")
 		}
+		ref = p.comparisonImage(ref)
 	}
-	profiles, err := decodePlateProfiles(saved.Profiles)
+	profiles, err := p.decodePlateProfiles(saved.Profiles)
 	if err != nil {
 		return err
 	}
@@ -160,6 +167,13 @@ func (p *plateCheck) load() error {
 		p.status = "waiting"
 	}
 	return nil
+}
+
+func (p *plateCheck) comparisonImage(img image.Image) image.Image {
+	if p.directRTSP {
+		return plateRTSPComparison(img)
+	}
+	return img
 }
 
 func (p *plateCheck) save(next plateSettings) error {

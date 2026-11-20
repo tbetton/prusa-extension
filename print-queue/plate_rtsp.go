@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"image"
+	"image/color"
 	"image/jpeg"
 	"net"
 	"net/netip"
@@ -171,4 +172,28 @@ func decodePlateRTSP(keyframe plateRTSPKeyframe) (plateFrame, error) {
 		return plateFrame{}, err
 	}
 	return plateFrame{jpeg: raw, image: img, taken: keyframe.taken, sum: sha256.Sum256(raw)}, nil
+}
+
+// Average small blocks of pixels to suppress compression noise in HD RTSP
+// images. Keep the JPEG and its hash at the camera's original resolution.
+func plateRTSPComparison(src image.Image) image.Image {
+	bounds := src.Bounds()
+	width, height := bounds.Dx()/2, bounds.Dy()/2
+	if max(bounds.Dx(), bounds.Dy()) < 1280 || !plateDimensions(width, height) {
+		return src
+	}
+	out := image.NewRGBA(image.Rect(0, 0, width, height))
+	for y := range height {
+		for x := range width {
+			var red, green, blue int
+			for dy := range 2 {
+				for dx := range 2 {
+					r, g, b := plateRGB(src, bounds.Min.X+2*x+dx, bounds.Min.Y+2*y+dy)
+					red, green, blue = red+int(r), green+int(g), blue+int(b)
+				}
+			}
+			out.SetRGBA(x, y, color.RGBA{R: uint8(red / 4), G: uint8(green / 4), B: uint8(blue / 4), A: 255})
+		}
+	}
+	return out
 }
