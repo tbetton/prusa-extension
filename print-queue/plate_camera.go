@@ -2,18 +2,10 @@ package main
 
 import (
 	"bytes"
-	"context"
-	"crypto/sha256"
 	"errors"
 	"image"
 	"image/color"
 	"image/jpeg"
-	"io"
-	"net/http"
-	"net/url"
-	"os"
-	"path"
-	"strings"
 	"time"
 )
 
@@ -27,110 +19,6 @@ type plateFrame struct {
 	image image.Image
 	taken time.Time
 	sum   [32]byte
-}
-
-type plateCamera struct {
-	url       string
-	token     string
-	tokenFile string
-	client    *http.Client
-	now       func() time.Time
-}
-
-func newPlateCamera(rawURL, tokenFile string, now func() time.Time) (*plateCamera, error) {
-	u, err := url.Parse(rawURL)
-	if err != nil || u.User != nil || u.Hostname() == "" || u.RawQuery != "" || u.ForceQuery ||
-		u.Fragment != "" || u.RawPath != "" || (u.Scheme != "http" && u.Scheme != "https") ||
-		path.Clean(u.Path) != u.Path || !strings.HasPrefix(u.Path, "/api/v1/cameras/") ||
-		!strings.HasSuffix(u.Path, "/snapshot") || strings.Count(u.Path, "/") != 5 {
-		return nil, errors.New("plate_camera_url must be the Prusa Connect camera snapshot URL")
-	}
-	switch u.Port() {
-	case "", "80", "443", "8080", "8090":
-	default:
-		return nil, errors.New("plate_camera_url must use port 80, 443, 8080 or 8090")
-	}
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.Proxy = nil
-	return &plateCamera{
-		url: u.String(), tokenFile: tokenFile, now: now,
-		client: &http.Client{
-			Transport: transport, Timeout: 3 * time.Second,
-			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-		},
-	}, nil
-}
-
-func (c *plateCamera) readToken() (string, error) {
-	token := strings.TrimSpace(c.token)
-	if token == "" {
-		file, err := os.Open(c.tokenFile)
-		if errors.Is(err, os.ErrNotExist) {
-			return "", nil
-		}
-		if err != nil {
-			return "", errors.New("the camera token file could not be read")
-		}
-		defer file.Close()
-		info, statErr := file.Stat()
-		if statErr != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 {
-			return "", errors.New("the camera token file must be private")
-		}
-		raw, readErr := io.ReadAll(io.LimitReader(file, 8193))
-		if readErr != nil || len(raw) > 8192 {
-			return "", errors.New("the camera token file could not be read")
-		}
-		token = strings.TrimSpace(string(raw))
-	}
-	if token == "" || len(token) > 8192 || strings.ContainsAny(token, " \t\r\n") {
-		return "", errors.New("enter a valid camera API token in the Print Queue settings")
-	}
-	return token, nil
-}
-
-func (c *plateCamera) snapshot(ctx context.Context) (plateFrame, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url, nil)
-	if err != nil {
-		return plateFrame{}, errors.New("the configured camera snapshot URL is invalid")
-	}
-	req.Header.Set("Accept", "image/jpeg")
-	req.Header.Set("Cache-Control", "no-cache")
-	token, err := c.readToken()
-	if err != nil {
-		return plateFrame{}, err
-	}
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return plateFrame{}, errors.New("Print Queue could not connect to the configured Prusa Connect server")
-	}
-	defer resp.Body.Close()
-	switch resp.StatusCode {
-	case http.StatusOK:
-	case http.StatusUnauthorized:
-		return plateFrame{}, errors.New("Prusa Connect requires a valid read-only API token for the camera. Set plate_camera_token in Print Queue settings")
-	case http.StatusForbidden, http.StatusNotFound:
-		return plateFrame{}, errors.New("Prusa Connect could not find the camera or the API token cannot observe it")
-	case http.StatusNoContent:
-		return plateFrame{}, errors.New("Prusa Connect has no image from this camera yet")
-	default:
-		return plateFrame{}, errors.New("Prusa Connect could not serve the camera snapshot")
-	}
-	taken, err := http.ParseTime(resp.Header.Get("Last-Modified"))
-	if now := c.now(); err != nil || taken.After(now) || now.Sub(taken) > plateMaxAge {
-		return plateFrame{}, errors.New("camera snapshot is stale or has no valid timestamp")
-	}
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxPlateJPEG+1))
-	if err != nil {
-		return plateFrame{}, errors.New("the camera snapshot could not be downloaded")
-	}
-	img, err := decodePlateJPEG(raw)
-	if err != nil {
-		return plateFrame{}, err
-	}
-	return plateFrame{jpeg: raw, image: img, taken: taken, sum: sha256.Sum256(raw)}, nil
 }
 
 func decodePlateJPEG(raw []byte) (image.Image, error) {

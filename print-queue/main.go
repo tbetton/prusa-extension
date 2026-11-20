@@ -33,7 +33,7 @@ import (
 
 const (
 	name    = "print-queue"
-	release = extension.Version("0.1.32")
+	release = extension.Version("0.1.33")
 )
 
 // Settings is what an operator writes under this instance's config block. The
@@ -45,9 +45,7 @@ type Settings struct {
 	KeepHistory         int    `json:"keep_history"`
 	PlateCheckEnabled   *bool  `json:"plate_check_enabled"`
 	PlatePrinter        string `json:"plate_check_printer"`
-	PlateCameraURL      string `json:"plate_camera_url"`
 	PlateCameraStream   string `json:"plate_camera_stream"`
-	PlateCameraToken    string `json:"plate_camera_token"`
 }
 
 func (s Settings) withDefaults() Settings {

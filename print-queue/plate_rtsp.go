@@ -24,8 +24,8 @@ const plateRTSPTimeout = 8 * time.Second
 
 func plateRTSPAddress(raw string) (*base.URL, string, error) {
 	parsed, err := url.Parse(raw)
-	if err != nil || parsed.Scheme != "rtsp" || parsed.User != nil || parsed.Fragment != "" {
-		return nil, "", errors.New("the plate camera needs an RTSP address without embedded credentials")
+	if err != nil || parsed.Scheme != "rtsp" || parsed.User != nil || parsed.Fragment != "" || parsed.RawQuery != "" || parsed.ForceQuery {
+		return nil, "", errors.New("the plate camera needs a plain RTSP address without credentials or query parameters")
 	}
 	ip, err := netip.ParseAddr(parsed.Hostname())
 	if err != nil || !ip.IsPrivate() || ip.Zone() != "" {

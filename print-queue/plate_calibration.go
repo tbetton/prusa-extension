@@ -50,7 +50,7 @@ type plateCalibrationView struct {
 	Issue    string `json:"issue,omitempty"`
 }
 
-func (p *plateCheck) decodePlateProfiles(saved []savedPlateProfile) ([]plateProfile, error) {
+func decodePlateProfiles(saved []savedPlateProfile) ([]plateProfile, error) {
 	var profiles []plateProfile
 	counts := map[string]int{}
 	for _, entry := range saved {
@@ -65,7 +65,7 @@ func (p *plateCheck) decodePlateProfiles(saved []savedPlateProfile) ([]plateProf
 			if err != nil || !usablePlateImage(frame) {
 				return nil, errors.New("invalid image in saved plate calibration")
 			}
-			profile.frames = append(profile.frames, p.comparisonImage(frame))
+			profile.frames = append(profile.frames, plateRTSPComparison(frame))
 		}
 		profiles = append(profiles, profile)
 	}

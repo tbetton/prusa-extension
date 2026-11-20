@@ -113,7 +113,7 @@ func TestClearFinishedOnlyTouchesAuthorizedPrinters(t *testing.T) {
 func TestPlateSettingsRequireAnOperatorAndSurviveRestart(t *testing.T) {
 	store, _, sc, clock := setup(t, "IDLE")
 	dir := filepath.Dir(store.file)
-	settings := Settings{PlatePrinter: "p1", PlateCameraURL: "http://127.0.0.1:8080/api/v1/cameras/p1/snapshot"}
+	settings := Settings{PlatePrinter: "p1", PlateCameraStream: "rtsp://192.168.1.10/live"}
 	p, err := openPlateCheck(dir, settings, clock.now)
 	if err != nil {
 		t.Fatal(err)
@@ -159,7 +159,7 @@ func TestPlateSettingsRequireAnOperatorAndSurviveRestart(t *testing.T) {
 			t.Fatalf("saved plate settings are wrong after %s", step.body)
 		}
 	}
-	settings.PlateCameraURL = "http://127.0.0.1:8080/api/v1/cameras/different/snapshot"
+	settings.PlateCameraStream = "rtsp://192.168.1.11/live"
 	reloaded, err := openPlateCheck(dir, settings, clock.now)
 	if err != nil || reloaded.reference != nil || reloaded.settings.EnabledBy != "" {
 		t.Fatalf("changing camera must invalidate the reference: %v", err)
@@ -170,7 +170,7 @@ func TestManualReadyWorksWithoutCameraCheck(t *testing.T) {
 	store, fleet, sc, clock := setup(t, "FINISHED")
 	disabled := false
 	plate, err := openPlateCheck(filepath.Dir(store.file), Settings{
-		PlateCheckEnabled: &disabled, PlatePrinter: "p1", PlateCameraURL: "ignored",
+		PlateCheckEnabled: &disabled, PlatePrinter: "p1", PlateCameraStream: "ignored",
 	}, clock.now)
 	if err != nil || plate != nil {
 		t.Fatalf("disabled camera check opened: %v", err)

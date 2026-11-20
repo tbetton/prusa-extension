@@ -4,10 +4,6 @@
     Alert,
     AlertTitle,
     Button,
-    Collapsible,
-    CollapsibleContent,
-    CollapsibleTrigger,
-    Input,
     Label,
     Select,
     SelectContent,
@@ -26,32 +22,21 @@
   const { fleet, signal, t } = host;
   const client = host.client as PrusaConnect;
   const uid = $props.id();
-  const loopback = 'http://127.0.0.1:8080';
-  const loopback8090 = 'http://127.0.0.1:8090';
-  const defaultOrigin =
-    window.location.port === '8090' ? loopback8090 : loopback;
-  const snapshotPath = (camera: string): string =>
-    `/api/v1/cameras/${encodeURIComponent(camera)}/snapshot`;
-
   type Instance = components['schemas']['ResourceInstance'];
   type Camera = components['schemas']['Camera'];
   type Device = components['schemas']['Device'];
-  type Credential = components['schemas']['CreatedCredentialBody'];
 
   let instance = $state<Instance>();
   let cameras = $state<Camera[]>([]);
-  let cameraStreams = $state<Record<string, string>>({});
+  let cameraStreams = $state.raw<Record<string, string>>({});
   let printerDraft = $state<string>();
   let cameraDraft = $state<string>();
-  let origin = $state(defaultOrigin);
   let loading = $state(true);
   let saving = $state(false);
   let saved = $state(false);
   let error = $state('');
   let previewError = $state(false);
   let previewTick = $state(0);
-  let replaceSnapshotURL = $state(false);
-  let updateLoopback = $state(false);
 
   const printers = $derived(
     (fleet.devices as readonly Device[])
@@ -73,7 +58,7 @@
       .filter(
         (camera) =>
           camera.device_id === printer &&
-          (camera.snapshot || cameraStreams[camera.name]),
+          Object.hasOwn(cameraStreams, camera.name),
       )
       .map((camera) => ({ value: camera.name, label: camera.name })),
   );
@@ -81,54 +66,27 @@
     availableCameras.find((option) => option.value === cameraDraft)?.value ??
       (availableCameras.length === 1 ? availableCameras[0]?.value : undefined),
   );
-  const stream = $derived(camera ? (cameraStreams[camera] ?? '') : '');
-
-  const target = $derived.by(() => {
-    if (!camera) return '';
-    try {
-      const server = new URL(origin.trim());
-      if (
-        !['http:', 'https:'].includes(server.protocol) ||
-        server.username ||
-        server.password ||
-        server.pathname !== '/' ||
-        server.search ||
-        server.hash ||
-        !['', '80', '443', '8080', '8090'].includes(server.port)
-      )
-        return '';
-      return server.origin + snapshotPath(camera);
-    } catch {
-      return '';
-    }
-  });
-  const serverOrigin = $derived(target ? new URL(target).origin : '');
-  const trustedOrigin = $derived(
-    serverOrigin === loopback ||
-      serverOrigin === loopback8090 ||
-      serverOrigin === window.location.origin,
-  );
+  const stream = $derived(camera ? cameraStreams[camera] : undefined);
   const configured = $derived(
-    printer === instance?.config.plate_check_printer &&
-      (stream
-        ? stream === instance?.config.plate_camera_stream
-        : !instance?.config.plate_camera_stream &&
-          target === instance?.config.plate_camera_url),
+    !!stream &&
+      printer === instance?.config.plate_check_printer &&
+      stream === instance?.config.plate_camera_stream,
   );
-  const credentialConfigured = $derived(
-    Boolean(instance?.config.plate_camera_token),
-  );
-  const tokenOriginMismatch = $derived.by(() => {
-    const previousURL = instance?.config.plate_camera_url;
-    return (
-      !stream &&
-      !trustedOrigin &&
-      credentialConfigured &&
-      (typeof previousURL !== 'string' ||
-        !URL.canParse(previousURL) ||
-        new URL(previousURL).origin !== serverOrigin)
-    );
-  });
+
+  const directAddress = (value: unknown): string | undefined => {
+    if (typeof value !== 'string') return;
+    const address = value.trim();
+    if (address.includes('?') || address.includes('#')) return;
+    const parsed = URL.parse(address);
+    if (
+      parsed?.protocol === 'rtsp:' &&
+      parsed.hostname &&
+      !parsed.username &&
+      !parsed.password &&
+      ['', '554', '8554'].includes(parsed.port)
+    )
+      return address;
+  };
 
   const choosePrinter = (id: string): void => {
     printerDraft = id;
@@ -189,59 +147,32 @@
       if (found.config.plate_check_enabled === false) return;
       const listed = await client.listCameras({}, signal);
       cameras = listed.items ?? [];
-      cameraStreams = {};
+      const streams: [string, string][] = [];
       if (cameras.some((candidate) => candidate.watch)) {
-        try {
-          const declared = await client.listCameraSettings({}, signal);
-          cameraStreams = Object.fromEntries(
-            (declared.items ?? []).flatMap(({ name, config }) => {
-              const direct = config.stream_url;
-              return typeof direct === 'string' &&
-                direct.startsWith('rtsp://') &&
-                !config.snapshot_url
-                ? [[name, direct]]
-                : [];
-            }),
-          );
-        } catch (cause) {
-          // Camera settings require operator access. The JPEG picker remains usable for viewers.
-          if (!(cause instanceof ApiError && cause.status === 403)) throw cause;
+        const declared = await client.listCameraSettings({}, signal);
+        for (const { name, config } of declared.items ?? []) {
+          const address = directAddress(config.stream_url);
+          if (address) streams.push([name, address]);
         }
       }
+      cameraStreams = Object.fromEntries(streams);
       const storedPrinter = found.config.plate_check_printer;
       printerDraft =
-        typeof storedPrinter === 'string' && storedPrinter !== ''
+        typeof storedPrinter === 'string' && storedPrinter
           ? storedPrinter
           : undefined;
-      const storedURL = found.config.plate_camera_url;
       const storedStream = found.config.plate_camera_stream;
-      cameraDraft = undefined;
-      origin = defaultOrigin;
-      replaceSnapshotURL = false;
-      updateLoopback = false;
-      if (typeof storedStream === 'string' && storedStream !== '') {
-        cameraDraft = cameras.find(
-          (candidate) =>
-            candidate.device_id === printerDraft &&
-            cameraStreams[candidate.name] === storedStream,
-        )?.name;
-      } else if (typeof storedURL === 'string' && URL.canParse(storedURL)) {
-        const url = new URL(storedURL);
-        if (/^\/api\/v1\/cameras\/[^/]+\/snapshot$/u.test(url.pathname)) {
-          updateLoopback =
-            url.origin === loopback && defaultOrigin === loopback8090;
-          origin = updateLoopback ? defaultOrigin : url.origin;
-          cameraDraft = cameras.find(
-            (candidate) =>
-              candidate.device_id === printerDraft &&
-              snapshotPath(candidate.name) === url.pathname,
-          )?.name;
-        } else {
-          replaceSnapshotURL = true;
-        }
-      }
-    } catch {
-      if (!signal.aborted) error = 'loadFailed';
+      cameraDraft =
+        typeof storedStream === 'string' && storedStream
+          ? cameras.find(
+              (candidate) =>
+                candidate.device_id === printerDraft &&
+                Object.hasOwn(cameraStreams, candidate.name) &&
+                cameraStreams[candidate.name] === storedStream,
+            )?.name
+          : undefined;
+    } catch (cause) {
+      writeError(cause, 'loadFailed');
     } finally {
       loading = false;
     }
@@ -263,56 +194,18 @@
   };
 
   const save = async (): Promise<void> => {
-    if (
-      !instance ||
-      !printer ||
-      !camera ||
-      (!stream && !target) ||
-      tokenOriginMismatch ||
-      instance.source === 'file'
-    )
-      return;
+    if (!instance || !printer || !stream || instance.source === 'file') return;
     saving = true;
     error = '';
     saved = false;
-    const current = instance;
-    let issued: Credential | undefined;
-    let writing = false;
     try {
-      if (!stream && trustedOrigin) {
-        const auth = await client.getAuthInfo({}, signal);
-        if (auth.provider !== '') {
-          issued = await client.createCredential(
-            {
-              body: { name: 'Print Queue camera', scopes: ['read'] },
-            },
-            signal,
-          );
-        }
-      }
-      writing = true;
-      instance = await writeConfig(current, {
+      instance = await writeConfig(instance, {
         plate_check_printer: printer,
-        plate_camera_url: stream ? '' : target,
         plate_camera_stream: stream,
-        ...(issued ? { plate_camera_token: issued.token } : {}),
       });
       saved = true;
-      replaceSnapshotURL = false;
-      updateLoopback = false;
     } catch (cause) {
-      // A refused write did not store this credential. On a transport
-      // failure the server may already have saved it.
-      if (
-        issued &&
-        cause instanceof ApiError &&
-        [400, 401, 403, 404, 409, 412, 422].includes(cause.status)
-      ) {
-        await client
-          .revokeCredential({ path: { credential: issued.id } }, signal)
-          .catch(() => undefined);
-      }
-      writeError(cause, writing ? 'saveFailed' : 'connectionFailed');
+      writeError(cause, 'saveFailed');
     } finally {
       saving = false;
     }
@@ -361,15 +254,6 @@
       {t('print-queue.setup.loading')}
     </p>
   {:else if instance}
-    {#if replaceSnapshotURL}
-      <Alert>
-        <AlertTitle>{t('print-queue.setup.replaceSnapshotURL')}</AlertTitle>
-      </Alert>
-    {:else if updateLoopback}
-      <Alert>
-        <AlertTitle>{t('print-queue.setup.updateLoopback')}</AlertTitle>
-      </Alert>
-    {/if}
     <div class="flex flex-col gap-2">
       <Label for="{uid}-printer">{t('print-queue.setup.printer')}</Label>
       <Select
@@ -432,12 +316,12 @@
       <p class="text-sm text-muted-foreground">
         {t('print-queue.setup.streamSave')}
       </p>
-    {:else if camera}
+    {:else if stream && printer}
       <div class="flex flex-col items-start gap-2">
         <img
           class="rounded max-h-64 w-full border object-contain"
           class:hidden={previewError}
-          src={`${stream && printer ? platePreviewURL(printer) : snapshotPath(camera)}?tick=${String(previewTick)}`}
+          src={`${platePreviewURL(printer)}?tick=${String(previewTick)}`}
           alt={t('print-queue.setup.preview')}
           onerror={() => {
             previewError = true;
@@ -463,33 +347,6 @@
       </div>
     {/if}
 
-    {#if !stream}
-      <Collapsible class="text-sm">
-        <CollapsibleTrigger variant="inline"
-          >{t('print-queue.setup.connection')}</CollapsibleTrigger
-        >
-        <CollapsibleContent class="mt-2 flex flex-col gap-2">
-          <Label for="{uid}-origin">{t('print-queue.setup.origin')}</Label>
-          <Input
-            id="{uid}-origin"
-            type="url"
-            value={origin}
-            disabled={saving}
-            oninput={(event) => {
-              origin = event.currentTarget.value;
-              saved = false;
-            }}
-          />
-          <p class="text-muted-foreground">
-            {t('print-queue.setup.originHint')}
-          </p>
-          {#if camera && !target}
-            <p class="text-warning">{t('print-queue.setup.invalidOrigin')}</p>
-          {/if}
-        </CollapsibleContent>
-      </Collapsible>
-    {/if}
-
     {#if instance.source === 'file'}
       <p class="text-sm text-muted-foreground">
         {t('print-queue.setup.locked')}
@@ -500,30 +357,12 @@
           disabled={saving ||
             error === 'conflict' ||
             !printer ||
-            (!stream && !target) ||
-            tokenOriginMismatch ||
-            ((!!stream || !trustedOrigin) && configured)}
+            !stream ||
+            configured}
           onclick={save}
         >
-          {#if stream}
-            {t('print-queue.setup.useDirectCamera')}
-          {:else if !trustedOrigin}
-            {t('print-queue.save')}
-          {:else if configured && credentialConfigured}
-            {t('print-queue.setup.reconnect')}
-          {:else}
-            {t('print-queue.setup.connect')}
-          {/if}
+          {t('print-queue.setup.useDirectCamera')}
         </Button>
-        {#if trustedOrigin}
-          <p class="text-sm text-muted-foreground">
-            {t('print-queue.setup.connectHint')}
-          </p>
-        {:else if tokenOriginMismatch}
-          <p class="text-sm text-warning">
-            {t('print-queue.setup.changeTokenOrigin')}
-          </p>
-        {/if}
       </div>
     {/if}
     {#if saved}
