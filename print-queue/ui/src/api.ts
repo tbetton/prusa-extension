@@ -1,5 +1,9 @@
 // The module's own routes, reached with the session cookie the browser holds.
 
+import { ApiError, type components } from '@prusa/connect';
+
+import { heldHost } from './host';
+
 /** The address the host serves this module's routes under. */
 const BASE = (() => {
   const match = /^(.*\/api\/v1\/modules\/[^/]+)\/ui\//u.exec(import.meta.url);
@@ -87,14 +91,7 @@ export const addJob = (
 ): Promise<Job> => call<Job>('POST', '/jobs', { device_id: deviceId, storage, path, name });
 
 /** One entry of a printer's own drive, as the core lists it. */
-export interface PrinterFile {
-  name: string;
-  display_name?: string;
-  path: string;
-  folder: boolean;
-  size: number;
-  modified?: string;
-}
+export type PrinterFile = components['schemas']['DeviceFile'];
 
 /** One folder of a printer's drive; an empty path is the drive list. */
 export const listPrinterFiles = async (
@@ -102,15 +99,18 @@ export const listPrinterFiles = async (
   path: string,
   refresh = false,
 ): Promise<{ items: PrinterFile[]; reading: boolean }> => {
-  const query = new URLSearchParams({ path });
-  if (refresh) query.set('refresh', 'true');
-  const response = await fetch(
-    `/api/v1/devices/${encodeURIComponent(deviceId)}/files?${query.toString()}`,
-    { credentials: 'same-origin' },
-  );
-  if (!response.ok) throw await refusal(response);
-  const body = (await response.json()) as { items?: PrinterFile[] | null; reading?: boolean };
-  return { items: body.items ?? [], reading: body.reading === true };
+  try {
+    const { items, reading } = await heldHost().client.listDeviceFiles({
+      path: { device_id: deviceId },
+      query: { path, refresh: refresh || undefined },
+    });
+    return { items: items ?? [], reading: reading === true };
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw new QueueError(error.status, error.code, error.problem?.detail);
+    }
+    throw error;
+  }
 };
 
 export const removeJob = (id: string): Promise<void> => call('DELETE', `/jobs/${id}`);
@@ -154,23 +154,18 @@ export const thumbnailUrl = (
 };
 
 /** A print the printer finished, from the core's job history. */
-export interface PastPrint {
-  display_name?: string;
-  path: string;
-  started?: string;
-  ended?: string;
-  outcome?: string;
-}
+export type PastPrint = components['schemas']['DeviceJob'];
 
 /** The printer's last finished prints, to compare real durations with estimates. */
 export const listHistory = async (deviceId: string, signal?: AbortSignal): Promise<PastPrint[]> => {
-  const init: RequestInit = { credentials: 'same-origin' };
-  if (signal) init.signal = signal;
-  const response = await fetch(
-    `/api/v1/devices/${encodeURIComponent(deviceId)}/jobs/history?limit=30`,
-    init,
-  );
-  if (!response.ok) return [];
-  const body = (await response.json()) as { items?: PastPrint[] };
-  return body.items ?? [];
+  try {
+    const { items } = await heldHost().client.listDeviceJobs(
+      { path: { device_id: deviceId }, query: { limit: 30 } },
+      signal,
+    );
+    return items ?? [];
+  } catch (error) {
+    if (error instanceof ApiError) return [];
+    throw error;
+  }
 };
