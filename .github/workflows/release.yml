@@ -7,10 +7,58 @@ on:
   release:
     types: [published]
 
+permissions:
+  contents: read
+
 jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      extensions: ${{ steps.plan.outputs.extensions }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$EVENT" == release ]]; then
+            git merge-base --is-ancestor HEAD origin/main || {
+              echo 'Release tags must point to a commit on main.' >&2
+              exit 1
+            }
+            if [[ "$TAG" =~ ^([a-zA-Z0-9_-]+)/v[^/]+$ ]]; then
+              extension="${BASH_REMATCH[1]}"
+            elif [[ "$TAG" =~ ^v[^/]+$ ]]; then
+              extension=print-queue
+            else
+              echo 'Use a release tag such as print-queue/v0.1.26.' >&2
+              exit 1
+            fi
+            git ls-files --error-unmatch "$extension/module.yaml" >/dev/null
+            extensions=$(jq -cn --arg extension "$extension" '[$extension]')
+          else
+            extensions=$(git ls-files -- ':(glob)*/module.yaml' |
+              sed -nE 's@^([a-zA-Z0-9_-]+)/module\.yaml$@\1@p' | jq -Rsc 'split("\n") | map(select(length > 0))')
+            jq -e 'length > 0' <<< "$extensions" >/dev/null
+          fi
+          printf 'extensions=%s\n' "$extensions" >> "$GITHUB_OUTPUT"
+
   publish:
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix:
+        extension: ${{ fromJSON(needs.plan.outputs.extensions) }}
     uses: prusa3d/prusa-connect-marketplace-publish/.github/workflows/publish.yml@v1
     with:
+      path: ${{ matrix.extension }}
       core-ref: sdk/v0.1.0-beta.1
       node-version: '24'
       bundle-command: UI_ONLY=1 sh install.sh
