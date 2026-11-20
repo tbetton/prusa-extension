@@ -6,7 +6,7 @@
 
 name: print-queue
 kind: sink
-version: 0.1.25
+version: 0.1.26
 license: MIT
 title: Print Queue
 summary: Queue and schedule prints for each printer.
@@ -16,6 +16,10 @@ openapi: openapi.json
 platforms:
   - linux_amd64
   - linux_arm64
+  - darwin_amd64
+  - darwin_arm64
+  - windows_amd64
+  - windows_arm64
 
 require:
   core: ">=0.1.0-beta.1"
