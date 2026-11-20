@@ -33,7 +33,7 @@ import (
 
 const (
 	name    = "print-queue"
-	release = extension.Version("0.1.26")
+	release = extension.Version("0.1.32")
 )
 
 // Settings is what an operator writes under this instance's config block. The
@@ -46,6 +46,7 @@ type Settings struct {
 	PlateCheckEnabled   *bool  `json:"plate_check_enabled"`
 	PlatePrinter        string `json:"plate_check_printer"`
 	PlateCameraURL      string `json:"plate_camera_url"`
+	PlateCameraStream   string `json:"plate_camera_stream"`
 	PlateCameraToken    string `json:"plate_camera_token"`
 }
 
@@ -302,6 +303,7 @@ func (m *module) routes() http.Handler {
 	})
 
 	mux.HandleFunc("POST /devices/{id}/plate-check", m.updatePlateCheck)
+	mux.HandleFunc("GET /devices/{id}/plate-preview", m.previewPlate)
 	mux.HandleFunc("POST /devices/{id}/ready", m.markReady)
 
 	mux.HandleFunc("POST /jobs", func(w http.ResponseWriter, r *http.Request) {

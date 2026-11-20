@@ -40,6 +40,8 @@ export interface PlateCheck {
   last_match_at?: string;
   status: string;
   can_configure: boolean;
+  profile_count?: number;
+  calibration?: { captured: number; target: number; failed?: boolean; issue?: string };
 }
 
 export class QueueError extends Error {
@@ -141,9 +143,14 @@ export const setPaused = (deviceId: string, paused: boolean): Promise<void> =>
 export const markPrinterReady = (deviceId: string): Promise<void> =>
   call('POST', `/devices/${encodeURIComponent(deviceId)}/ready`, { plate_empty: true });
 
+export const platePreviewURL = (deviceId: string): string =>
+  `${BASE}/devices/${encodeURIComponent(deviceId)}/plate-preview`;
+
 export const updatePlateCheck = (
   deviceId: string,
-  settings: { action: 'capture_reference' } | { action: 'set_automatic'; automatic: boolean },
+  settings:
+    | { action: 'start_calibration' | 'cancel_calibration' }
+    | { action: 'set_automatic'; automatic: boolean },
   signal?: AbortSignal,
 ): Promise<void> => call('POST', `/devices/${encodeURIComponent(deviceId)}/plate-check`, settings, signal);
 

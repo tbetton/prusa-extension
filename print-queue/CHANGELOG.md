@@ -7,6 +7,30 @@ Write the entry in the same change as the code. One bullet per behaviour a
 person outside this repository can observe: a route, a setting, a screen, a
 refusal. Name the route and the setting key, never a function or a file.
 
+## 0.1.32
+
+- Reduce compression noise when comparing HD RTSP snapshots in the build plate check.
+
+## 0.1.31
+
+- Select a camera with only an H.264 RTSP stream in Build plate check. Print Queue reads that stream directly to create fresh plate snapshots.
+
+## 0.1.30
+
+- Retry camera frames during plate calibration, tolerate small uniform changes in exposure, and show what prevents calibration from completing.
+
+## 0.1.29
+
+- Confirm the build plate is empty once to collect three reference photos automatically. Save separate calibration sets for idle and finished printer positions.
+
+## 0.1.28
+
+- Check the build plate and start the next queued job automatically while the printer is idle.
+
+## 0.1.27
+
+- Retry the second build plate capture if the camera temporarily returns a stale or repeated image.
+
 ## 0.1.26
 
 - Install Print Queue on Prusa Connect Local hosted on macOS (Intel or Apple silicon) or Windows (x64 or ARM64).

@@ -45,6 +45,10 @@ func (m *module) markReady(w http.ResponseWriter, r *http.Request) {
 	}
 	sc.mu.Lock()
 	defer sc.mu.Unlock()
+	if p := sc.plate; p != nil && p.settings.Device == id && p.calibration != nil {
+		refuse(w, r, ReadyUnavailable.New("wait for the build plate calibration to finish or cancel it"))
+		return
+	}
 
 	device, err := sc.fleet.Get(r.Context(), deviceapi.GetParams{ID: id})
 	if err != nil || device.Retired || (device.Kind != "" && device.Kind != "printer") {
@@ -82,7 +86,7 @@ func (m *module) markReady(w http.ResponseWriter, r *http.Request) {
 	}
 	if p := sc.plate; p != nil && p.settings.Device == id {
 		p.permit = platePermit{}
-		if p.reference != nil {
+		if p.hasReference() {
 			p.reset("waiting")
 		}
 	}

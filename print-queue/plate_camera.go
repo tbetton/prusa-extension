@@ -138,8 +138,7 @@ func decodePlateJPEG(raw []byte) (image.Image, error) {
 		return nil, errors.New("invalid camera snapshot size")
 	}
 	config, err := jpeg.DecodeConfig(bytes.NewReader(raw))
-	if err != nil || config.Width < 320 || config.Height < 240 ||
-		config.Width > 1920 || config.Height > 1920 || config.Width*config.Height > 1920*1080 {
+	if err != nil || !plateDimensions(config.Width, config.Height) {
 		return nil, errors.New("camera snapshot dimensions must be between 320x240 and 2 megapixels")
 	}
 	img, err := jpeg.Decode(bytes.NewReader(raw))
@@ -149,9 +148,50 @@ func decodePlateJPEG(raw []byte) (image.Image, error) {
 	return img, nil
 }
 
+func plateDimensions(width, height int) bool {
+	return width >= 320 && height >= 240 && width <= 1920 && height <= 1920 && width*height <= 1920*1080
+}
+
 // plateMatch uses the entire fixed camera view. Local blocks catch changes
 // that a global average would hide. The thresholds deliberately favor holds.
 func plateMatch(reference, current image.Image) bool {
+	return plateMatchWithShift(reference, current, 0)
+}
+
+// A small, uniform exposure change is acceptable when collecting references.
+// The local block thresholds still reject changes in shape or position.
+func plateCalibrationMatch(reference, current image.Image) bool {
+	if plateMatch(reference, current) {
+		return true
+	}
+	bounds := reference.Bounds()
+	if bounds != current.Bounds() {
+		return false
+	}
+	var deltas [511]int
+	var samples int
+	for y := bounds.Min.Y; y < bounds.Max.Y; y += 8 {
+		for x := bounds.Min.X; x < bounds.Max.X; x += 8 {
+			r1, g1, b1 := plateRGB(reference, x, y)
+			r2, g2, b2 := plateRGB(current, x, y)
+			delta := (int(r2) + int(g2) + int(b2) - int(r1) - int(g1) - int(b1)) / 3
+			deltas[255+delta]++
+			samples++
+		}
+	}
+	count := 0
+	for i, n := range deltas {
+		count += n
+		if count <= samples/2 {
+			continue
+		}
+		shift := i - 255
+		return shift != 0 && shift >= -12 && shift <= 12 && plateMatchWithShift(reference, current, shift)
+	}
+	return false
+}
+
+func plateMatchWithShift(reference, current image.Image, shift int) bool {
 	if reference.Bounds() != current.Bounds() {
 		return false
 	}
@@ -164,7 +204,7 @@ func plateMatch(reference, current image.Image) bool {
 				for px := x; px < min(x+block, bounds.Max.X); px++ {
 					r1, g1, b1 := plateRGB(reference, px, py)
 					r2, g2, b2 := plateRGB(current, px, py)
-					delta := max(channelDelta(r1, r2), channelDelta(g1, g2), channelDelta(b1, b2))
+					delta := max(channelDelta(r1, r2, shift), channelDelta(g1, g2, shift), channelDelta(b1, b2, shift))
 					total += delta
 					if delta >= 22 {
 						changed++
@@ -194,8 +234,9 @@ func plateRGB(img image.Image, x, y int) (r, g, b uint8) {
 	}
 }
 
-func channelDelta(a, b uint8) int {
-	return int(max(a, b) - min(a, b))
+func channelDelta(a, b uint8, shift int) int {
+	delta := int(b) - min(255, max(0, int(a)+shift))
+	return max(delta, -delta)
 }
 
 func usablePlateImage(img image.Image) bool {

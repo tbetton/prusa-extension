@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "print-queue",
-    "version": "0.1.26",
+    "version": "0.1.32",
     "description": "A queue of prints for each printer. Every path is relative to the mount the host assigns."
   },
   "components": {
@@ -13,6 +13,17 @@
           "automatic": { "type": "boolean" },
           "reference_at": { "type": "string", "format": "date-time" },
           "last_match_at": { "type": "string", "format": "date-time" },
+          "profile_count": { "type": "integer", "minimum": 0 },
+          "calibration": {
+            "type": "object",
+            "properties": {
+              "captured": { "type": "integer", "minimum": 0 },
+              "target": { "type": "integer", "minimum": 0 },
+              "failed": { "type": "boolean" },
+              "issue": { "type": "string" }
+            },
+            "required": ["captured", "target"]
+          },
           "status": { "type": "string" },
           "can_configure": { "type": "boolean" }
         },
@@ -115,11 +126,29 @@
         }
       }
     },
+    "/devices/{id}/plate-preview": {
+      "get": {
+        "operationId": "preview-plate-camera",
+        "summary": "Read a current JPEG from the configured plate camera",
+        "description": "Requires permission to observe the printer. The preview does not change the build plate calibration.",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "A fresh camera image.",
+            "content": { "image/jpeg": { "schema": { "type": "string", "format": "binary" } } }
+          },
+          "404": { "description": "The caller cannot see the printer, or the printer has no configured plate camera." },
+          "409": { "description": "A fresh camera image is unavailable." }
+        }
+      }
+    },
     "/devices/{id}/plate-check": {
       "post": {
         "operationId": "update-plate-check",
-        "summary": "Capture an empty plate reference or update automatic readiness",
-        "description": "Requires permission to operate the configured printer. Replacing its reference disables automatic readiness.",
+        "summary": "Calibrate the empty plate or update automatic readiness",
+        "description": "Requires permission to operate the configured printer. Starting a calibration or capturing a legacy reference disables automatic readiness.",
         "parameters": [
           { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
         ],
@@ -130,7 +159,7 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "action": { "type": "string", "enum": ["capture_reference", "set_automatic"] },
+                  "action": { "type": "string", "enum": ["capture_reference", "start_calibration", "cancel_calibration", "set_automatic"] },
                   "automatic": { "type": "boolean", "description": "Required for set_automatic." }
                 },
                 "required": ["action"]

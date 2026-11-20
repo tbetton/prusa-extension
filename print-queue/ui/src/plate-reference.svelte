@@ -94,11 +94,19 @@
     {/if}
     {#if status}
       {@const plate = status}
+      {@const calibrating = plate.calibration && !plate.calibration.failed}
       <div class="flex flex-wrap gap-x-3 gap-y-1 text-sm text-muted-foreground">
         {#if plate.reference_at}
           <span
             >{t('print-queue.plate.referenceAt', {
               at: timeLabel(plate.reference_at),
+            })}</span
+          >
+        {/if}
+        {#if plate.profile_count}
+          <span
+            >{t('print-queue.plate.profiles', {
+              count: plate.profile_count,
             })}</span
           >
         {/if}
@@ -121,14 +129,41 @@
           <p class="text-sm text-muted-foreground">
             {t('print-queue.plate.captureHint')}
           </p>
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={busy || readError}
-            onclick={() => void update({ action: 'capture_reference' })}
-          >
-            {t('print-queue.plate.capture')}
-          </Button>
+          {#if plate.calibration?.failed}
+            <p role="status" class="text-sm">
+              {t('print-queue.plate.calibrationFailed')}
+            </p>
+          {/if}
+          {#if plate.calibration?.issue}
+            <p class="text-sm text-muted-foreground">
+              {t(`print-queue.plate.calibrationIssue.${plate.calibration.issue}`)}
+            </p>
+          {/if}
+          {#if calibrating && plate.calibration}
+            <p role="status" class="text-sm">
+              {t('print-queue.plate.calibrationProgress', {
+                count: plate.calibration.captured,
+                total: plate.calibration.target,
+              })}
+            </p>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={busy || readError}
+              onclick={() => void update({ action: 'cancel_calibration' })}
+            >
+              {t('print-queue.plate.calibrationCancel')}
+            </Button>
+          {:else}
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={busy || readError}
+              onclick={() => void update({ action: 'start_calibration' })}
+            >
+              {t('print-queue.plate.capture')}
+            </Button>
+          {/if}
         </div>
         <SettingsRow
           label={t('print-queue.plate.automatic')}
@@ -138,7 +173,10 @@
             <Switch
               aria-label={t('print-queue.plate.automatic')}
               checked={plate.automatic}
-              disabled={busy || readError || !plate.reference_at}
+              disabled={busy ||
+                readError ||
+                !!calibrating ||
+                !plate.reference_at}
               onCheckedChange={(automatic) =>
                 void update({ action: 'set_automatic', automatic })}
             />
