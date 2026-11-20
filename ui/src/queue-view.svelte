@@ -9,6 +9,7 @@
     CardContent,
     CardHeader,
     CardTitle,
+    ConfirmDialog,
     EmptyState,
     Tabs,
     TabsContent,
@@ -21,6 +22,7 @@
     clearFinished,
     listHistory,
     listJobs,
+    markPrinterReady,
     moveJob,
     removeJob,
     requeueJob,
@@ -61,6 +63,7 @@
   let editValue = $state('');
   let busy = $state(false);
   let picking = $state<string | undefined>(undefined);
+  let markingReady = $state<string | undefined>(undefined);
   let tab = $state('active');
   let now = $state(Date.now());
   /** Real / slicer duration ratio, per printer. */
@@ -156,6 +159,23 @@
 
   const nameOf = (id: string): string => fleet.device(id)?.name ?? id;
 
+  const manualReadiness = (id: string): 'available' | 'printing' | 'offline' | 'ready' | 'unavailable' | undefined => {
+    const device = fleet.device(id);
+    if (device?.actions?.includes('operate') !== true) return undefined;
+    if (!device.connected) return 'offline';
+    const state = device.state['/state'];
+    if (device.job?.running || currentPrints[id] || state === 'PRINTING' || state === 'PAUSED' ||
+      jobsOf(id).some((job) => job.status === 'starting' || job.status === 'printing')) {
+      return 'printing';
+    }
+    if (state === 'READY') return 'ready';
+    if (device.capabilities?.includes('core.command.set_printer_ready') !== true ||
+      (state !== 'IDLE' && state !== 'FINISHED' && state !== 'STOPPED')) {
+      return 'unavailable';
+    }
+    return 'available';
+  };
+
   const stateOf = (id: string): string => {
     const state = fleet.device(id)?.state as Record<string, unknown> | undefined;
     const value = state?.['/state'];
@@ -211,7 +231,7 @@
 
   const FINISHED: Job['status'][] = ['done', 'stopped', 'failed'];
   const isFinished = (job: PlanJob): boolean => FINISHED.includes(job.status);
-  const isRunning = (job: Job): boolean => job.status === 'printing' || job.status === 'starting';
+  const isRunning = (job: Pick<Job, 'status'>): boolean => job.status === 'printing' || job.status === 'starting';
   const ms = (iso: string | undefined): number => (iso ? new Date(iso).getTime() : 0);
 
   /**
@@ -284,96 +304,108 @@
 </script>
 
 {#snippet jobRow(job: PlanJob, position?: number, slot?: Slot)}
-              {@const detail = jobDetail(job)}
-              {@const displayStatus = job.detail_code === 'unconfirmed' ? 'unconfirmed' : job.status}
-              <li class="flex gap-3 py-2">
-                {#if job.path}
-                <img
-                  src={thumbnailUrl(job.device_id, job.storage, job.path)}
-                  alt=""
-                  loading="lazy"
-                  class="size-16 shrink-0 rounded bg-muted object-contain"
-                  onerror={(event) => ((event.currentTarget as HTMLImageElement).style.visibility = 'hidden')}
-                />
-                {/if}
-                <div class="flex min-w-0 flex-1 flex-col gap-1">
-                <div class="flex flex-wrap items-center gap-2">
-                  <Badge variant={variant(displayStatus)}>{t(`print-queue.status.${displayStatus}`)}</Badge>
-                  {#if position !== undefined}
-                    <span class="text-sm tabular-nums text-muted-foreground">{position}.</span>
-                  {/if}
-                  <span class="min-w-0 flex-1 truncate font-medium" title={job.path}>{job.name}</span>
-                  {#if job.status === 'queued'}
-                    <Button size="sm" variant="ghost" aria-label={t('print-queue.up')} disabled={busy} onclick={() => act(() => moveJob(job.id, 'up'))}>↑</Button>
-                    <Button size="sm" variant="ghost" aria-label={t('print-queue.down')} disabled={busy} onclick={() => act(() => moveJob(job.id, 'down'))}>↓</Button>
-                    <Button size="sm" variant="ghost" disabled={busy} onclick={() => startEditing(job)}>
-                      {t('print-queue.schedule')}
-                    </Button>
-                  {/if}
-                  {#if isFinished(job)}
-                    <Button size="sm" variant="ghost" disabled={busy} onclick={() => act(() => requeueJob(job.id))}>
-                      {t('print-queue.requeue')}
-                    </Button>
-                  {/if}
-                  {#if job.status !== 'starting' && job.status !== 'printing'}
-                    <Button size="sm" variant="ghost" disabled={busy} onclick={() => act(() => removeJob(job.id))}>
-                      {t('print-queue.remove')}
-                    </Button>
-                  {/if}
-                </div>
-                <div class="flex flex-wrap gap-x-4 text-xs text-muted-foreground">
-                  {#if job.path}
-                    <span>{job.storage ? `${job.storage}:${job.path}` : `${t('print-queue.onPrinter')} ${job.path}`}</span>
-                  {/if}
-                  {#if slot?.progress !== undefined}
-                    <span class="tabular-nums text-foreground">{formatNumber(slot.progress / 100, { style: 'percent', maximumFractionDigits: 0 })}</span>
-                  {/if}
-                  {#if slot?.duration !== undefined}
-                    <span class="text-foreground">
-                      ⏱ {formatDuration(slot.running ? slot.end - slot.start : slot.duration)}
-                      {#if slot.running}
-                        · {t('print-queue.plan.endsAt')} {formatClock(slot.end, now)}
-                        ({t('print-queue.plan.left')} {formatDuration(slot.end - now)})
-                      {:else}
-                        · {formatClock(slot.start, now)} → {formatClock(slot.end, now)}
-                      {/if}
-                    </span>
-                  {:else if slot !== undefined}
-                    <span>⏱ {t('print-queue.plan.unknown')}</span>
-                  {/if}
-                  {#if job.not_before && job.status === 'queued'}
-                    <span>⏰ {t('print-queue.notBefore')} {when(job.not_before)}</span>
-                  {/if}
-                  {#if job.started_at}
-                    <span>{t('print-queue.startedAt')} {when(job.started_at)}</span>
-                  {/if}
-                  {#if job.ended_at}
-                    <span>{t('print-queue.endedAt')} {when(job.ended_at)}</span>
-                  {/if}
-                </div>
-                {#if detail}
-                  <p class="text-xs text-destructive">{detail}</p>
-                {/if}
-                {#if editing === job.id}
-                  <div class="flex flex-wrap items-center gap-2">
-                    <input
-                      type="datetime-local"
-                      lang={SOURCE_LOCALE}
-                      aria-label={t('print-queue.notBefore')}
-                      class="h-8 rounded-md border border-input bg-background px-2 text-sm"
-                      bind:value={editValue}
-                    />
-                    <Button size="sm" disabled={busy} onclick={() => saveSchedule(job)}>{t('print-queue.save')}</Button>
-                    {#if job.not_before}
-                      <Button size="sm" variant="secondary" disabled={busy} onclick={() => { editValue = ''; saveSchedule(job); }}>
-                        {t('print-queue.asap')}
-                      </Button>
-                    {/if}
-                    <Button size="sm" variant="ghost" onclick={() => (editing = undefined)}>{t('print-queue.cancel')}</Button>
-                  </div>
-                {/if}
-                </div>
-              </li>
+  {@const detail = jobDetail(job)}
+  {@const displayStatus = job.detail_code === 'unconfirmed' ? 'unconfirmed' : job.status}
+  <li class="flex items-start gap-3 py-3">
+    {#if job.path}
+      <img
+        src={thumbnailUrl(job.device_id, job.storage, job.path)}
+        alt=""
+        loading="lazy"
+        class="size-12 shrink-0 rounded bg-muted object-contain sm:size-16"
+        onerror={(event) => {
+          if (event.currentTarget instanceof HTMLImageElement) {
+            event.currentTarget.style.visibility = 'hidden';
+          }
+        }}
+      />
+    {/if}
+    <div class="grid min-w-0 flex-1 grid-cols-1 gap-x-4 gap-y-2 lg:grid-cols-[minmax(0,1fr)_auto]">
+      <div class="min-w-0">
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <Badge variant={variant(displayStatus)}>{t(`print-queue.status.${displayStatus}`)}</Badge>
+          {#if position !== undefined}
+            <span class="text-sm tabular-nums text-muted-foreground">{position}.</span>
+          {/if}
+          <span class="min-w-0 flex-1 wrap-anywhere font-medium" title={job.path}>{job.name}</span>
+        </div>
+        <div class="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          {#if slot?.progress !== undefined}
+            <span class="tabular-nums text-foreground">
+              {formatNumber(slot.progress / 100, { style: 'percent', maximumFractionDigits: 0 })}
+            </span>
+          {/if}
+          {#if slot?.duration !== undefined}
+            <span class="text-foreground">
+              {formatDuration(slot.running ? slot.end - slot.start : slot.duration)}
+              {#if slot.running}
+                · {t('print-queue.plan.endsAt')} {formatClock(slot.end, now)}
+                ({t('print-queue.plan.left')} {formatDuration(slot.end - now)})
+              {:else}
+                · {formatClock(slot.start, now)} → {formatClock(slot.end, now)}
+              {/if}
+            </span>
+          {:else if slot !== undefined}
+            <span>{t('print-queue.plan.unknown')}</span>
+          {/if}
+          {#if job.not_before && job.status === 'queued'}
+            <span>{t('print-queue.notBefore')} {when(job.not_before)}</span>
+          {/if}
+          {#if job.started_at}
+            <span>{t('print-queue.startedAt')} {when(job.started_at)}</span>
+          {/if}
+          {#if job.ended_at}
+            <span>{t('print-queue.endedAt')} {when(job.ended_at)}</span>
+          {/if}
+        </div>
+        {#if job.path}
+          <p class="mt-1 truncate text-xs text-muted-foreground" title={job.path}>
+            {job.storage ? `${job.storage}:${job.path}` : `${t('print-queue.onPrinter')} ${job.path}`}
+          </p>
+        {/if}
+        {#if detail}
+          <p class="mt-1 text-xs text-destructive">{detail}</p>
+        {/if}
+        {#if editing === job.id}
+          <div class="mt-2 flex flex-wrap items-center gap-2">
+            <input
+              type="datetime-local"
+              lang={SOURCE_LOCALE}
+              aria-label={t('print-queue.notBefore')}
+              class="h-8 rounded-md border border-input bg-background px-2 text-sm"
+              bind:value={editValue}
+            />
+            <Button size="sm" disabled={busy} onclick={() => saveSchedule(job)}>{t('print-queue.save')}</Button>
+            {#if job.not_before}
+              <Button size="sm" variant="secondary" disabled={busy} onclick={() => { editValue = ''; saveSchedule(job); }}>
+                {t('print-queue.asap')}
+              </Button>
+            {/if}
+            <Button size="sm" variant="ghost" onclick={() => (editing = undefined)}>{t('print-queue.cancel')}</Button>
+          </div>
+        {/if}
+      </div>
+      {#if !isRunning(job)}
+        <div class="flex flex-wrap items-start gap-1 lg:justify-end">
+          {#if job.status === 'queued'}
+            <Button size="sm" variant="ghost" aria-label={t('print-queue.up')} disabled={busy} onclick={() => act(() => moveJob(job.id, 'up'))}>↑</Button>
+            <Button size="sm" variant="ghost" aria-label={t('print-queue.down')} disabled={busy} onclick={() => act(() => moveJob(job.id, 'down'))}>↓</Button>
+            <Button size="sm" variant="ghost" disabled={busy} onclick={() => startEditing(job)}>
+              {t('print-queue.schedule')}
+            </Button>
+          {/if}
+          {#if isFinished(job)}
+            <Button size="sm" variant="ghost" disabled={busy} onclick={() => act(() => requeueJob(job.id))}>
+              {t('print-queue.requeue')}
+            </Button>
+          {/if}
+          <Button size="sm" variant="ghost" disabled={busy} onclick={() => act(() => removeJob(job.id))}>
+            {t('print-queue.remove')}
+          </Button>
+        </div>
+      {/if}
+    </div>
+  </li>
 {/snippet}
 
 
@@ -401,21 +433,45 @@
         {@const slots = slotsOf(printer)}
         {@const jobs = slots.map((slot) => slot.job)}
         {@const paused = queue?.paused[printer] === true}
+        {@const plate = queue?.plate_checks?.[printer]}
         {@const factor = factors[printer] ?? 1}
-        <Card>
+        {@const readiness = manualReadiness(printer)}
+        {@const readinessNotice = readiness && readiness !== 'available' && readiness !== 'printing' ? readiness : undefined}
+        <Card class="min-w-0">
           <CardHeader>
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <CardTitle>
-                {#if deviceId === undefined}{nameOf(printer)} · {/if}
-                <span class="text-sm font-normal text-muted-foreground">
-                  {t('print-queue.printerState')}
-                  {stateOf(printer) || '—'}
-                </span>
-              </CardTitle>
-              <div class="flex gap-2">
+            <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+              <div class="flex min-w-0 flex-wrap items-center gap-2">
+                {#if deviceId === undefined}
+                  <CardTitle>{nameOf(printer)}</CardTitle>
+                {/if}
+                {#if stateOf(printer)}
+                  <Badge variant="outline">{stateOf(printer)}</Badge>
+                {/if}
+                {#if plate?.automatic}
+                  <Badge variant="info">{t('print-queue.plate.autoBadge')}</Badge>
+                {/if}
+                {#if plate?.status === 'readyBlocked'}
+                  <Badge variant="warning">{t('print-queue.plate.status.readyBlocked')}</Badge>
+                {/if}
+                {#if paused}
+                  <Badge variant="warning">{t('print-queue.queueHeld')}</Badge>
+                {/if}
+              </div>
+              <div class="flex flex-wrap gap-2">
                 <Button size="sm" onclick={() => (picking = printer)}>
                   + {t('print-queue.pick.open')}
                 </Button>
+                {#if readiness !== undefined}
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={busy || readiness !== 'available'}
+                    aria-describedby={readinessNotice ? `ready-status-${printer}` : undefined}
+                    onclick={() => (markingReady = printer)}
+                  >
+                    {t('print-queue.markReady.button')}
+                  </Button>
+                {/if}
                 <Button
                   size="sm"
                   variant={paused ? 'default' : 'secondary'}
@@ -426,10 +482,13 @@
                 </Button>
               </div>
             </div>
+            {#if readinessNotice}
+              <p class="text-xs text-muted-foreground" id={`ready-status-${printer}`}>
+                {t(`print-queue.markReady.status.${readinessNotice}`)}
+              </p>
+            {/if}
             {#if paused}
               <p class="text-sm text-warning">{t('print-queue.pausedHint')}</p>
-            {:else}
-              <p class="text-xs text-muted-foreground">{t('print-queue.readyHint')}</p>
             {/if}
           </CardHeader>
           <CardContent>
@@ -503,4 +562,22 @@
       />
     {/key}
   {/if}
+  <ConfirmDialog
+    open={markingReady !== undefined}
+    onOpenChange={(open) => {
+      if (!open) markingReady = undefined;
+    }}
+    variant="confirm"
+    title={t('print-queue.markReady.title', { printer: markingReady ? nameOf(markingReady) : '' })}
+    description={t('print-queue.markReady.confirm')}
+    confirmLabel={t('print-queue.markReady.button')}
+    confirmDisabled={busy || markingReady === undefined || manualReadiness(markingReady) !== 'available'}
+    onConfirm={() => {
+      const printer = markingReady;
+      markingReady = undefined;
+      if (printer !== undefined && manualReadiness(printer) === 'available') {
+        void act(() => markPrinterReady(printer));
+      }
+    }}
+  />
 </div>

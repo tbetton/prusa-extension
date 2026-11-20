@@ -7,6 +7,46 @@ Write the entry in the same change as the code. One bullet per behaviour a
 person outside this repository can observe: a route, a setting, a screen, a
 refusal. Name the route and the setting key, never a function or a file.
 
+## 0.1.25
+
+- Capture the plate reference, review check status, and enable automatic starts in the **Build plate check** settings tab.
+
+## 0.1.24
+
+- Turn the camera check on or off directly from the **Build plate check** tab.
+- Show an **Automatic start** badge when enabled, keep **Mark as ready** visible during printing, and group job details and actions for narrow screens.
+
+## 0.1.23
+
+- Keep **Mark as ready** visible for operators and show why it is disabled while the printer is busy or unavailable.
+
+## 0.1.22
+
+- Turn off the camera-based build plate check with `plate_check_enabled` in the extension settings.
+- Use **Mark as ready** in Print Queue to confirm an empty plate and set a compatible printer to READY.
+
+## 0.1.21
+
+- Build plate check supports Prusa Connect Local on port 8090 and suggests the corresponding loopback address when the app uses that port.
+
+## 0.1.20
+
+- Select the camera and choose Connect camera. Print Queue creates a read-only credential when the server requires sign-in.
+- Reference capture reports authentication, connection, and snapshot errors separately.
+
+## 0.1.19
+
+- When a direct camera URL is already saved, the Build plate check settings suggest the Prusa Connect server address and let you select the registered camera.
+
+## 0.1.18
+
+- Select a printer and its camera by name in the Build plate check settings tab, and preview a snapshot before saving.
+
+## 0.1.17
+
+- Configure a camera with `plate_check_printer` and `plate_camera_url`, then capture an empty build plate reference in Print Queue.
+- Opt in to automatic readiness after a successful print. The next job can start after two fresh captures match the reference at least 30 seconds apart and the printer reports READY.
+
 ## 0.1.16
 
 - Print Queue recovers missing start and end events from the printer's Jobs history, including previously unconfirmed prints.

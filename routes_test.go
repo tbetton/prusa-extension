@@ -11,6 +11,7 @@ import (
 
 	"github.com/prusa3d/prusa-connect/sdk/accessapi"
 	"github.com/prusa3d/prusa-connect/sdk/busapi"
+	"github.com/prusa3d/prusa-connect/sdk/deviceapi"
 	"github.com/prusa3d/prusa-connect/sdk/routesapi"
 )
 
@@ -106,5 +107,120 @@ func TestClearFinishedOnlyTouchesAuthorizedPrinters(t *testing.T) {
 	_, hiddenRemains := reloaded.job(hidden.ID)
 	if w.Code != http.StatusNoContent || visible || !hiddenRemains {
 		t.Fatalf("clear returned %d, authorized job remains: %t, hidden job remains: %t", w.Code, visible, hiddenRemains)
+	}
+}
+
+func TestPlateSettingsRequireAnOperatorAndSurviveRestart(t *testing.T) {
+	store, _, sc, clock := setup(t, "IDLE")
+	dir := filepath.Dir(store.file)
+	settings := Settings{PlatePrinter: "p1", PlateCameraURL: "http://127.0.0.1:8080/api/v1/cameras/p1/snapshot"}
+	p, err := openPlateCheck(dir, settings, clock.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	img := platePhoto(45, false)
+	jpg := encodeTestJPEG(t, img)
+	p.snapshot = func(context.Context) (plateFrame, error) {
+		return plateFrame{jpeg: jpg, image: img, taken: clock.at}, nil
+	}
+	sc.plate = p
+	routes := (&module{store: store, access: queueAccess{}, scheduler: sc}).routes()
+	const enable = `{"action":"set_automatic","automatic":true}`
+	const capture = `{"action":"capture_reference"}`
+	for _, step := range []struct {
+		principal, body string
+		want            int
+		automatic       bool
+	}{
+		{"user:viewer", capture, http.StatusForbidden, false},
+		{"user:operator", enable, http.StatusConflict, false},
+		{"user:operator", capture, http.StatusNoContent, false},
+		{"user:operator", enable, http.StatusNoContent, true},
+		{"user:viewer", `{"action":"set_automatic","automatic":false}`, http.StatusForbidden, true},
+		{"user:operator", capture, http.StatusNoContent, false},
+	} {
+		req, err := (routesapi.Request{
+			Method: http.MethodPost, Path: "/devices/p1/plate-check", Principal: step.principal, Body: []byte(step.body),
+		}).HTTP(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := httptest.NewRecorder()
+		routes.ServeHTTP(r, req)
+		if r.Code != step.want {
+			t.Fatalf("%s %s returned %d, want %d: %s", step.principal, step.body, r.Code, step.want, r.Body)
+		}
+		reloaded, err := openPlateCheck(dir, settings, clock.now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if (reloaded.settings.EnabledBy != "") != step.automatic ||
+			(reloaded.reference != nil) != (p.reference != nil) {
+			t.Fatalf("saved plate settings are wrong after %s", step.body)
+		}
+	}
+	settings.PlateCameraURL = "http://127.0.0.1:8080/api/v1/cameras/different/snapshot"
+	reloaded, err := openPlateCheck(dir, settings, clock.now)
+	if err != nil || reloaded.reference != nil || reloaded.settings.EnabledBy != "" {
+		t.Fatalf("changing camera must invalidate the reference: %v", err)
+	}
+}
+
+func TestManualReadyWorksWithoutCameraCheck(t *testing.T) {
+	store, fleet, sc, clock := setup(t, "FINISHED")
+	disabled := false
+	plate, err := openPlateCheck(filepath.Dir(store.file), Settings{
+		PlateCheckEnabled: &disabled, PlatePrinter: "p1", PlateCameraURL: "ignored",
+	}, clock.now)
+	if err != nil || plate != nil {
+		t.Fatalf("disabled camera check opened: %v", err)
+	}
+	sc.fleet = &plateFleet{fakeFleet: fleet, epoch: 1}
+	var commands int
+	sc.command = func(_ context.Context, p deviceapi.CommandParams) (deviceapi.Result, error) {
+		if p.ID != "p1" || p.Verb != readyVerb {
+			t.Fatalf("unexpected command: %+v", p)
+		}
+		commands++
+		return deviceapi.Result{OK: true}, nil
+	}
+	_, _ = store.Add(Job{DeviceID: "p1", Path: "next.bgcode"})
+	if err := store.update(func(data *snapshot) error {
+		data.PlateReady = map[string]plateReady{"p1": {}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	routes := (&module{store: store, access: queueAccess{}, scheduler: sc}).routes()
+	for _, step := range []struct {
+		principal, body, state string
+		want                   int
+	}{
+		{"user:viewer", `{"plate_empty":true}`, "FINISHED", http.StatusForbidden},
+		{"user:operator", `{"plate_empty":false}`, "FINISHED", http.StatusBadRequest},
+		{"user:operator", `{"plate_empty":true}`, "PRINTING", http.StatusConflict},
+		{"user:operator", `{"plate_empty":true}`, "FINISHED", http.StatusNoContent},
+	} {
+		fleet.state = step.state
+		req, err := (routesapi.Request{
+			Method: http.MethodPost, Path: "/devices/p1/ready", Principal: step.principal, Body: []byte(step.body),
+		}).HTTP(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		w := httptest.NewRecorder()
+		routes.ServeHTTP(w, req)
+		if w.Code != step.want {
+			t.Fatalf("READY as %s in %s returned %d, want %d: %s", step.principal, step.state, w.Code, step.want, w.Body)
+		}
+	}
+	sc.Tick(t.Context())
+	if commands != 1 || len(fleet.printed) != 0 {
+		t.Fatalf("wanted one READY command and no prints before READY, got %d and %d", commands, len(fleet.printed))
+	}
+	fleet.state = printerReady
+	sc.Tick(t.Context())
+	if len(fleet.printed) != 1 {
+		t.Fatal("the queue did not dispatch after the printer reported READY")
 	}
 }

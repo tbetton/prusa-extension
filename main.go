@@ -33,7 +33,7 @@ import (
 
 const (
 	name    = "print-queue"
-	release = extension.Version("0.1.16")
+	release = extension.Version("0.1.25")
 )
 
 // Settings is what an operator writes under this instance's config block. The
@@ -43,6 +43,10 @@ type Settings struct {
 	StartTimeoutMinutes int    `json:"start_timeout_minutes"`
 	PrinterFolder       string `json:"printer_folder"`
 	KeepHistory         int    `json:"keep_history"`
+	PlateCheckEnabled   *bool  `json:"plate_check_enabled"`
+	PlatePrinter        string `json:"plate_check_printer"`
+	PlateCameraURL      string `json:"plate_camera_url"`
+	PlateCameraToken    string `json:"plate_camera_token"`
 }
 
 func (s Settings) withDefaults() Settings {
@@ -188,6 +192,15 @@ func (m *module) configure(_ context.Context, sent Settings, grants wirerpc.Gran
 		folder:       settings.PrinterFolder,
 		logf:         logf,
 		authorize:    m.authorizeDispatch,
+		command:      m.devices.Command,
+	}
+	plate, plateErr := openPlateCheck(grants.Data, settings, time.Now)
+	if plateErr != nil {
+		logf("plate check: %v", plateErr)
+	}
+	if plate != nil {
+		plate.mayEnable = m.mayConfigurePlate
+		m.scheduler.plate = plate
 	}
 
 	go m.scheduler.follow(m.ctx, m.conn)
@@ -279,10 +292,17 @@ func (m *module) routes() http.Handler {
 				}
 			}
 		}
-		answer(w, http.StatusOK, map[string]any{
+		body := map[string]any{
 			"jobs": view.Jobs, "paused": view.Paused,
-		})
+		}
+		if m.scheduler != nil {
+			body["plate_checks"] = m.plateViews(r.Context(), principal, deviceID)
+		}
+		answer(w, http.StatusOK, body)
 	})
+
+	mux.HandleFunc("POST /devices/{id}/plate-check", m.updatePlateCheck)
+	mux.HandleFunc("POST /devices/{id}/ready", m.markReady)
 
 	mux.HandleFunc("POST /jobs", func(w http.ResponseWriter, r *http.Request) {
 		store := m.ready(w, r)

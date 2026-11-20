@@ -6,7 +6,7 @@
 
 name: print-queue
 kind: sink
-version: 0.1.16
+version: 0.1.25
 license: MIT
 title: Print Queue
 summary: Queue and schedule prints for each printer.
@@ -24,6 +24,7 @@ require:
   core-device.get: "*"
   core-device.jobs: "*"
   core-device.job_history: "*"
+  core-device.command: "*"
   core-device.print: "*"
   core-storage.stat: "*"
 
@@ -44,6 +45,26 @@ options:
     type: int
     default: "20"
     summary: Finished jobs kept per printer.
+  - key: plate_check_enabled
+    type: bool
+    default: "true"
+    summary: Enable the camera-based build plate check.
+  - key: plate_check_printer
+    type: string
+    summary: Device ID of the printer covered by the optional plate check.
+  - key: plate_camera_url
+    type: string
+    summary: Snapshot URL of that printer's camera on this Prusa Connect Local server.
+  - key: plate_camera_token
+    type: secret
+    summary: Read-only Prusa Connect Local API credential for the camera snapshot.
+
+egress:
+  - option: plate_camera_url
+    ports: [443, 80, 8080, 8090]
+    from: process
+    why: Reads snapshots from the configured Prusa Connect Local server.
+    sends: Sends a GET request and the optional read-only bearer token for that server.
 
 needs:
   memory_mib: 64
@@ -65,6 +86,9 @@ ui:
   entry: ui/index.js
   library: ">=0.1.0 <1.0.0"
   contributes:
+    settings:
+      - id: plate-check
+        title: Build plate check
     pages:
       - path: print-queue
         title: Print Queue
