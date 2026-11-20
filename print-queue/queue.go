@@ -549,6 +549,10 @@ func (sc *Scheduler) tickDevice(ctx context.Context, deviceID string) {
 	if plate != nil && plate.settings.Device != deviceID {
 		plate = nil
 	}
+	if plate != nil && plate.calibration != nil {
+		plate.updateCalibration(ctx, sc, device)
+		return
+	}
 	permit := platePermit{}
 	if plate != nil && available && state == printerReady && platePrinterAvailable(device) &&
 		plate.permit.job != "" && plate.permit.epoch == device.CapabilityEpoch && now.Before(plate.permit.expires) &&
@@ -652,7 +656,7 @@ func (sc *Scheduler) tickDevice(ctx context.Context, deviceID string) {
 			sc.checkPlate(ctx, device, *candidate)
 		case !guarded:
 			plate.permit = platePermit{}
-			if plate.reference != nil {
+			if plate.hasReference() {
 				plate.reset("waiting")
 			}
 		}

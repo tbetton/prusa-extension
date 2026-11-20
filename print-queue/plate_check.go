@@ -22,31 +22,37 @@ const (
 )
 
 type plateSettings struct {
-	Device      string    `json:"device"`
-	Camera      string    `json:"camera"`
-	EnabledBy   string    `json:"enabled_by,omitempty"`
-	Reference   []byte    `json:"reference"`
-	ReferenceAt time.Time `json:"reference_at"`
+	Device      string              `json:"device"`
+	Camera      string              `json:"camera"`
+	EnabledBy   string              `json:"enabled_by,omitempty"`
+	Reference   []byte              `json:"reference,omitempty"`
+	ReferenceAt time.Time           `json:"reference_at"`
+	Profiles    []savedPlateProfile `json:"profiles,omitempty"`
 }
 
 type plateView struct {
-	Automatic    bool       `json:"automatic"`
-	ReferenceAt  *time.Time `json:"reference_at,omitempty"`
-	LastMatchAt  *time.Time `json:"last_match_at,omitempty"`
-	Status       string     `json:"status"`
-	CanConfigure bool       `json:"can_configure"`
+	Automatic    bool                  `json:"automatic"`
+	ReferenceAt  *time.Time            `json:"reference_at,omitempty"`
+	LastMatchAt  *time.Time            `json:"last_match_at,omitempty"`
+	Status       string                `json:"status"`
+	CanConfigure bool                  `json:"can_configure"`
+	ProfileCount int                   `json:"profile_count,omitempty"`
+	Calibration  *plateCalibrationView `json:"calibration,omitempty"`
 }
 
 type plateCheck struct {
-	settings  plateSettings
-	file      string
-	reference image.Image
-	status    string
-	lastMatch *time.Time
-	first     plateSample
-	permit    platePermit
-	snapshot  func(context.Context) (plateFrame, error)
-	mayEnable func(context.Context, string, string) bool
+	settings          plateSettings
+	file              string
+	reference         image.Image
+	profiles          []plateProfile
+	calibration       *plateCalibration
+	calibrationFailed bool
+	status            string
+	lastMatch         *time.Time
+	first             plateSample
+	permit            platePermit
+	snapshot          func(context.Context) (plateFrame, error)
+	mayEnable         func(context.Context, string, string) bool
 }
 
 type plateSample struct {
@@ -56,6 +62,7 @@ type plateSample struct {
 	checked time.Time
 	taken   time.Time
 	sum     [32]byte
+	matches uint16
 }
 
 type plateWindow struct {
@@ -117,11 +124,24 @@ func (p *plateCheck) load() error {
 	if saved.Device != p.settings.Device || saved.Camera != p.settings.Camera {
 		return nil
 	}
-	ref, err := decodePlateJPEG(saved.Reference)
-	if err != nil || saved.ReferenceAt.IsZero() || !usablePlateImage(ref) {
-		return errors.New("invalid saved plate reference")
+	var ref image.Image
+	if len(saved.Reference) != 0 {
+		ref, err = decodePlateJPEG(saved.Reference)
+		if err != nil || saved.ReferenceAt.IsZero() || !usablePlateImage(ref) {
+			return errors.New("invalid saved plate reference")
+		}
 	}
-	p.settings, p.reference, p.status = saved, ref, "waiting"
+	profiles, err := decodePlateProfiles(saved.Profiles)
+	if err != nil {
+		return err
+	}
+	if ref == nil && len(profiles) == 0 {
+		saved.EnabledBy = ""
+	}
+	p.settings, p.reference, p.profiles = saved, ref, profiles
+	if p.hasReference() {
+		p.status = "waiting"
+	}
 	return nil
 }
 
@@ -179,7 +199,7 @@ func (sc *Scheduler) plateWindow(ctx context.Context, id, state string) (plateWi
 
 func (sc *Scheduler) checkPlate(ctx context.Context, device deviceapi.Device, next Job) {
 	p := sc.plate
-	if p.reference == nil {
+	if !p.hasReference() {
 		p.reset("noReference")
 		return
 	}
@@ -214,7 +234,8 @@ func (sc *Scheduler) checkPlate(ctx context.Context, device deviceapi.Device, ne
 		}
 		return
 	}
-	if !usablePlateImage(shot.image) || !plateMatch(p.reference, shot.image) {
+	matches := p.matchingProfiles(state, shot.image)
+	if matches == 0 {
 		p.reset("different")
 		return
 	}
@@ -222,10 +243,13 @@ func (sc *Scheduler) checkPlate(ctx context.Context, device deviceapi.Device, ne
 		p.status = "retryingCamera"
 		return
 	}
+	if first.matches&matches == 0 {
+		first = plateSample{}
+	}
 	if first.checked.IsZero() {
 		p.first = plateSample{
 			job: next.ID, window: window, epoch: device.CapabilityEpoch,
-			checked: checked, taken: shot.taken, sum: shot.sum,
+			checked: checked, taken: shot.taken, sum: shot.sum, matches: matches,
 		}
 		p.status = "firstMatch"
 		return
@@ -287,31 +311,46 @@ func (sc *Scheduler) checkPlate(ctx context.Context, device deviceapi.Device, ne
 }
 
 func (p *plateCheck) capture(ctx context.Context, sc *Scheduler) (plateSettings, image.Image, error) {
-	id := p.settings.Device
-	before, err := sc.fleet.Get(ctx, deviceapi.GetParams{ID: id})
-	state := printerState(before)
-	if err != nil || !platePrinterAvailable(before) ||
-		(state != "IDLE" && state != "FINISHED" && state != printerReady) {
-		return plateSettings{}, nil, errors.New("the printer must be stopped and available to capture a reference")
-	}
-	shot, err := p.snapshot(ctx)
+	shot, _, err := p.referenceFrame(ctx, sc, true)
 	if err != nil {
 		return plateSettings{}, nil, err
-	}
-	last, err := sc.lastPlatePrint(ctx, id)
-	if err != nil || (last != nil && last.Ended != nil && !shot.taken.After(*last.Ended)) {
-		return plateSettings{}, nil, errors.New("wait for the finished print and a new camera image")
-	}
-	after, err := sc.fleet.Get(ctx, deviceapi.GetParams{ID: id})
-	if err != nil || !platePrinterAvailable(after) || printerState(after) != state ||
-		after.CapabilityEpoch != before.CapabilityEpoch || sc.now().Sub(shot.taken) > plateMaxAge {
-		return plateSettings{}, nil, errors.New("the printer changed state during capture")
-	}
-	if !usablePlateImage(shot.image) {
-		return plateSettings{}, nil, errors.New("the camera image needs more contrast and light")
 	}
 	next := p.settings
 	next.Reference, next.ReferenceAt = shot.jpeg, shot.taken
 	next.EnabledBy = ""
 	return next, shot.image, nil
+}
+
+func (p *plateCheck) referenceFrame(ctx context.Context, sc *Scheduler, allowReady bool) (plateFrame, plateCalibrationContext, error) {
+	id := p.settings.Device
+	before, err := sc.fleet.Get(ctx, deviceapi.GetParams{ID: id})
+	state := printerState(before)
+	if err != nil || !platePrinterAvailable(before) ||
+		(state != "IDLE" && state != "FINISHED" && !(allowReady && state == printerReady)) {
+		return plateFrame{}, plateCalibrationContext{}, errors.New("the printer must be stopped and available to capture a reference")
+	}
+	shot, err := p.snapshot(ctx)
+	if err != nil {
+		return plateFrame{}, plateCalibrationContext{}, err
+	}
+	last, err := sc.lastPlatePrint(ctx, id)
+	if err != nil || (last != nil && last.Ended != nil && !shot.taken.After(*last.Ended)) {
+		return plateFrame{}, plateCalibrationContext{}, errors.New("wait for the finished print and a new camera image")
+	}
+	after, err := sc.fleet.Get(ctx, deviceapi.GetParams{ID: id})
+	if err != nil || !platePrinterAvailable(after) || printerState(after) != state ||
+		after.CapabilityEpoch != before.CapabilityEpoch || sc.now().Sub(shot.taken) > plateMaxAge {
+		return plateFrame{}, plateCalibrationContext{}, errors.New("the printer changed state during capture")
+	}
+	if !usablePlateImage(shot.image) {
+		return plateFrame{}, plateCalibrationContext{}, errors.New("the camera image needs more contrast and light")
+	}
+	capture := plateCalibrationContext{state: state, epoch: before.CapabilityEpoch}
+	if last != nil {
+		capture.previous = last.ID
+		if last.Ended != nil {
+			capture.ended = last.Ended.UTC()
+		}
+	}
+	return shot, capture, nil
 }

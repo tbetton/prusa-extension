@@ -212,6 +212,87 @@ func TestPlateCheckStartsFromIdle(t *testing.T) {
 	}
 }
 
+func TestPlateCalibrationSavesACompleteSetOrKeepsThePreviousOne(t *testing.T) {
+	store, fleet, sc, clock := setup(t, "IDLE")
+	settings := Settings{PlatePrinter: "p1", PlateCameraURL: "http://127.0.0.1:8080/api/v1/cameras/p1/snapshot"}
+	dir := filepath.Dir(store.file)
+	p, err := openPlateCheck(dir, settings, clock.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sc.plate = p
+	p.mayEnable = func(context.Context, string, string) bool { return true }
+	level := uint8(45)
+	obstruction := false
+	p.snapshot = func(context.Context) (plateFrame, error) {
+		img := platePhoto(level, obstruction)
+		jpg := encodeTestJPEG(t, img)
+		return plateFrame{jpeg: jpg, image: img, taken: clock.at, sum: sha256.Sum256(jpg)}, nil
+	}
+	start := func() {
+		t.Helper()
+		if err := p.startCalibration(t.Context(), sc, "user:operator"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tick := func() {
+		clock.at = clock.at.Add(plateCalibrationGap)
+		sc.Tick(t.Context())
+	}
+	start()
+	tick()
+	if p.calibration == nil || len(p.calibration.frames) != 1 || len(p.profiles) != 0 {
+		t.Fatal("a duplicate camera frame should not complete the calibration")
+	}
+	level++
+	tick()
+	level++
+	tick()
+	if p.calibration != nil || len(p.profiles) != 1 || p.settings.EnabledBy != "" || len(fleet.printed) != 0 {
+		t.Fatal("a complete calibration should save one profile and keep automatic starts disabled")
+	}
+
+	start()
+	obstruction = true
+	tick()
+	if p.calibration != nil || !p.calibrationFailed || len(p.profiles) != 1 {
+		t.Fatal("a changed plate should cancel the new calibration and retain the saved one")
+	}
+	reloaded, err := openPlateCheck(dir, settings, clock.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reloaded.profiles) != 1 || reloaded.matchingProfiles("IDLE", platePhoto(level, false)) == 0 ||
+		reloaded.matchingProfiles("IDLE", platePhoto(level, true)) != 0 ||
+		reloaded.matchingProfiles("FINISHED", platePhoto(level, false)) != 0 {
+		t.Fatal("the saved set must recognize an empty plate only in its learned printer state")
+	}
+}
+
+func TestPlateCheckRequiresACommonCalibration(t *testing.T) {
+	store, fleet, sc, clock := setup(t, "IDLE")
+	commands, _ := configurePlateFixture(t, fleet, sc, clock, true)
+	first, second := platePhoto(45, false), platePhoto(60, false)
+	sc.plate.reference = nil
+	sc.plate.profiles = []plateProfile{
+		{state: "IDLE", frames: []image.Image{first}},
+		{state: "IDLE", frames: []image.Image{second}},
+	}
+	frame := first
+	sc.plate.snapshot = func(context.Context) (plateFrame, error) {
+		jpg := encodeTestJPEG(t, frame)
+		return plateFrame{image: frame, taken: clock.at, sum: sha256.Sum256(jpg)}, nil
+	}
+	_, _ = store.Add(Job{DeviceID: "p1", Path: "next.bgcode"})
+	sc.Tick(t.Context())
+	clock.at = clock.at.Add(plateDelay)
+	frame = second
+	sc.Tick(t.Context())
+	if *commands != 0 || sc.plate.status != "firstMatch" || !sc.plate.first.checked.Equal(clock.at) {
+		t.Fatal("matching different calibration sets must start a new pair")
+	}
+}
+
 func TestPlateCheckRetriesTheSecondCapture(t *testing.T) {
 	for _, scenario := range []struct {
 		name   string
