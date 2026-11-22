@@ -7,6 +7,10 @@ Write the entry in the same change as the code. One bullet per behaviour a
 person outside this repository can observe: a route, a setting, a screen, a
 refusal. Name the route and the setting key, never a function or a file.
 
+## 0.2.0
+
+- Make Print Queue available for installation from the stable channel in the Prusa Connect Local Extensions catalogue.
+
 ## 0.1.35
 
 - Use the Prusa Connect client for the USB file picker and print history, improving compatibility with changes to server paths and authentication.
