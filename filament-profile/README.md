@@ -2,7 +2,7 @@
 
 Filament Profile writes PrusaSlicer **2.9** filament profiles for the spools loaded on a printer. It adds a **Filament Profile** tab to a printer's page, next to the tools. For each tool it proposes the nearest preset of the profiles Prusa Research publishes, and writes one Config Bundle (`.ini`) you import in PrusaSlicer.
 
-1. Assign a material to each tool in the **Materials** extension (or let the printer report it).
+1. Assign a material to each tool in the **Materials** extension, which gives the brand, the product, the colour and the maker's temperatures. Without Materials, the tab uses the type of material the printer reports for each tool (PLA, PETG…), and you name each profile yourself.
 2. Open the **Filament Profile** tab of the printer.
 3. Pick the printer your PrusaSlicer uses. The extension chooses the variant for each tool's nozzle (`HF0.4`, `0.6`, ...).
 4. Check the profile name and the preset for each tool, then download the `.ini`.
@@ -13,7 +13,7 @@ When Prusa has no preset for a brand, the extension starts from the generic pres
 ## Data
 
 - Source: the Prusa Research profile archive for PrusaSlicer 2.x. The extension downloads it from `catalogue_url` and keeps the newest bundle in its data directory.
-- The extension reads the tools from the Materials extension (`GET /printers/{device}/tools`). It stores nothing about your printers.
+- The extension reads the tools from the Materials extension (`GET /printers/{device}/tools`), or from the printer's own report when Materials is not available. It stores nothing about your printers.
 - Not supported yet: LayerHub (its API needs an account), and PrusaSlicer 3, which uses a different, YAML-based profile format.
 
 The extension displays its interface and error messages in English.

@@ -21,6 +21,7 @@
   "filament-profile.noResults": "No Prusa preset matches “{query}”.",
   "filament-profile.noneFit": "{count} preset(s) found, but none has a variant for this printer and nozzle, so PrusaSlicer would flag it incompatible.",
   "filament-profile.someFit": "{fit} of {count} preset(s) found fit this printer and nozzle.",
+  "filament-profile.printerOnly": "The Materials extension is not available, so the profiles start from the type of material the printer reports. Rename each profile, and use the search to find a preset by brand. Temperatures from the maker are not available.",
   "filament-profile.noFit": "No Prusa preset fits this printer and nozzle. Pick another printer, or search for a preset.",
   "filament-profile.noVariant": "No variant for this printer and nozzle. The base settings are used.",
   "filament-profile.download": "Download .ini for PrusaSlicer 2.9 ({count})",

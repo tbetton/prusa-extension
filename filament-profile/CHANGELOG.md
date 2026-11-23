@@ -7,6 +7,10 @@ Write the entry in the same change as the code. One bullet per behaviour a
 person outside this repository can observe: a route, a setting, a screen, a
 refusal. Name the route and the setting key, never a function or a file.
 
+## 0.4.0
+
+- Work without the Materials extension. When it is not installed, stopped, or does not follow the printer, the **Filament Profile** tab reads the tools from the printer itself: the nozzle and the type of material it reports (PLA, PETG…). The profiles then start from the generic preset of that type. The brand, the product, the colour and the maker's temperatures need Materials, and the tab says so.
+
 ## 0.3.1
 
 - Say what a preset search found on the **Filament Profile** tab: how many presets matched, and how many fit the printer and the nozzle. A search used to hide every preset that has no variant for the printer, without a word, and replace the list already offered. It now adds to that list.

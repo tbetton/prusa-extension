@@ -24,6 +24,7 @@
     type Properties,
     type Request,
     type Status,
+    type ToolSource,
     type Tool,
   } from './api';
   import { heldHost } from './host';
@@ -62,6 +63,8 @@
   let rows = $state<Row[]>([]);
   /** Every tool of the printer, loaded or not: one alone is the extruder. */
   let toolCount = $state(0);
+  /** Where the tools were read: Materials knows the brand and the product, the printer alone does not. */
+  let source = $state<ToolSource>('materials');
   /** The ids of every tool in the printer's order: a tool's place is its slot in PrusaSlicer. */
   let order = $state<string[]>([]);
   let status = $state<Status | undefined>(undefined);
@@ -205,10 +208,12 @@
     loading = true;
     problem = undefined;
     try {
-      const [tools, state] = await Promise.all([
+      const [found, state] = await Promise.all([
         listTools(deviceId, host.signal),
         getCatalogue(host.signal),
       ]);
+      const tools = found.tools;
+      source = found.source;
       status = state;
       toolCount = tools.length;
       order = tools.map((tool) => tool.id).sort(compareToolIds);
@@ -341,6 +346,10 @@
       {t('filament-profile.refresh')}
     </Button>
   </div>
+
+  {#if source === 'printer' && !loading}
+    <p class="text-sm text-muted-foreground">{t('filament-profile.printerOnly')}</p>
+  {/if}
 
   {#if status?.error}
     <p class="text-sm text-destructive">{status.error}</p>

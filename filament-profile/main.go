@@ -29,7 +29,7 @@ import (
 
 const (
 	name    = "filament-profile"
-	release = extension.Version("0.3.1")
+	release = extension.Version("0.4.0")
 
 	defaultCatalogueURL = "https://storage.googleapis.com/prusa3d-content-prod-14e8-preset-repo-api-public/prusa-fff/prusa-fff-offline.zip"
 )

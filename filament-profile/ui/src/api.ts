@@ -1,6 +1,11 @@
 // The module's own routes, and the Materials module's tools, reached with the
 // session cookie the browser holds.
 
+import type { components } from '@prusa/connect';
+
+import { heldHost } from './host';
+import { toolsFromTree } from './printer-tools';
+
 /** The address the host serves this module's routes under. */
 const BASE = (() => {
   const match = /^(.*\/api\/v1\/modules\/[^/]+)\/ui\//u.exec(import.meta.url);
@@ -73,10 +78,10 @@ export interface Tool {
     color_rgba: string;
   } | null;
   reported: { type: string; abbreviation: string; color_rgba: string } | null;
-  nozzle: { diameter_mm: number; high_flow: boolean; hardened: boolean };
+  nozzle: { diameter_mm: number; high_flow: boolean; hardened: boolean; high_temp?: boolean };
 }
 
-export const listTools = async (deviceId: string, signal?: AbortSignal): Promise<Tool[]> =>
+const listToolsFromMaterials = async (deviceId: string, signal?: AbortSignal): Promise<Tool[]> =>
   (
     await json<{ tools: Tool[] }>(
       MATERIALS,
@@ -86,6 +91,38 @@ export const listTools = async (deviceId: string, signal?: AbortSignal): Promise
       signal,
     )
   ).tools;
+
+type DeviceTool = components['schemas']['DeviceTool'];
+
+const listToolsFromPrinter = async (deviceId: string, signal?: AbortSignal): Promise<Tool[]> => {
+  const host = heldHost();
+  const device = await host.client.getDevice({ path: { device_id: deviceId } }, signal ?? host.signal);
+  const tree: Record<string, DeviceTool | null> = device.tools?.tools ?? {};
+
+  return toolsFromTree(tree);
+};
+
+/** Where the tools were read: the Materials extension, or the printer alone. */
+export type ToolSource = 'materials' | 'printer';
+
+/**
+ * The tools of a printer. The Materials extension knows the brand, the product
+ * and the colour of each spool, so it comes first. Without it (not installed,
+ * stopped, or not following this printer), the printer's own report is read.
+ */
+export const listTools = async (
+  deviceId: string,
+  signal?: AbortSignal,
+): Promise<{ tools: Tool[]; source: ToolSource }> => {
+  try {
+    return { tools: await listToolsFromMaterials(deviceId, signal), source: 'materials' };
+  } catch (error) {
+    // Not found, or a module that is down. A refusal of access is not hidden.
+    if (!(error instanceof ProfileError) || ![404, 502, 503].includes(error.status)) throw error;
+
+    return { tools: await listToolsFromPrinter(deviceId, signal), source: 'printer' };
+  }
+};
 
 export interface Status {
   ready: boolean;
