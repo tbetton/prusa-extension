@@ -1,0 +1,52 @@
+# Filament Profile writes PrusaSlicer 2.9 filament profiles for the spools
+# loaded on a printer's tools. It reads the profiles Prusa Research publishes
+# and writes a Config Bundle (.ini) to import in PrusaSlicer.
+
+name: filament-profile
+kind: sink
+version: 0.1.0
+license: MIT
+title: Filament Profile
+summary: Write PrusaSlicer 2.9 filament profiles for the spools loaded on a printer.
+codeowner: tbetton
+contract_major: 1
+openapi: openapi.json
+platforms:
+  - linux_amd64
+  - linux_arm64
+  - darwin_amd64
+  - darwin_arm64
+  - windows_amd64
+  - windows_arm64
+
+require:
+  core: ">=0.1.0-beta.1"
+
+# Every connection the process makes outside Prusa Connect.
+egress:
+  - option: catalogue_url
+    why: Downloads the filament profiles Prusa Research publishes for PrusaSlicer 2.x.
+    sends: Only the request for the archive.
+
+options:
+  - key: catalogue_url
+    type: string
+    default: "https://storage.googleapis.com/prusa3d-content-prod-14e8-preset-repo-api-public/prusa-fff/prusa-fff-offline.zip"
+    summary: Address of the Prusa Research profile archive for PrusaSlicer 2.x.
+  - key: refresh_days
+    type: int
+    default: "7"
+    summary: Days before the downloaded profiles are fetched again.
+
+needs:
+  memory_mib: 64
+  # The downloaded bundle is kept here.
+  data: true
+
+ui:
+  entry: ui/index.js
+  library: ">=0.1.0 <1.0.0"
+  contributes:
+    device_tab:
+      - id: filament-profile
+        title: Filament Profile

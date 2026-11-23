@@ -1,0 +1,280 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "filament-profile",
+    "version": "0.1.0",
+    "description": "PrusaSlicer 2.9 filament profiles for the spools on a printer. Every path is relative to the mount the host assigns."
+  },
+  "components": {
+    "schemas": {
+      "Status": {
+        "type": "object",
+        "properties": {
+          "ready": {
+            "type": "boolean"
+          },
+          "refreshing": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "string"
+          },
+          "presets": {
+            "type": "integer"
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ready",
+          "refreshing",
+          "presets"
+        ]
+      },
+      "Candidate": {
+        "type": "object",
+        "properties": {
+          "preset": {
+            "type": "string"
+          },
+          "score": {
+            "type": "number"
+          },
+          "variants": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "preset",
+          "variants"
+        ]
+      },
+      "Request": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "vendor": {
+            "type": "string"
+          },
+          "base": {
+            "type": "string"
+          },
+          "variant": {
+            "type": "string"
+          },
+          "color_rgba": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "base"
+        ]
+      }
+    }
+  },
+  "paths": {
+    "/catalogue": {
+      "get": {
+        "operationId": "get-catalogue",
+        "summary": "State of the downloaded Prusa profiles",
+        "description": "The host authorizes the caller on this module before the route is called.",
+        "responses": {
+          "200": {
+            "description": "The catalogue's state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/catalogue/refresh": {
+      "post": {
+        "operationId": "refresh-catalogue",
+        "summary": "Download the Prusa profiles again",
+        "description": "Starts the download in the background and answers at once. Poll GET /catalogue.",
+        "responses": {
+          "202": {
+            "description": "The download runs.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The module is starting."
+          }
+        }
+      }
+    },
+    "/match": {
+      "get": {
+        "operationId": "match-filament",
+        "summary": "The nearest Prusa presets for a spool",
+        "description": "Ranks the base presets against the spool's brand and name. The generic preset of the type closes the list.",
+        "parameters": [
+          {
+            "name": "brand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Up to five presets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "matches": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Candidate"
+                      }
+                    }
+                  },
+                  "required": [
+                    "matches"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The profiles are not downloaded yet."
+          }
+        }
+      }
+    },
+    "/presets": {
+      "get": {
+        "operationId": "search-presets",
+        "summary": "Search the Prusa base presets",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Up to 50 presets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "presets": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Candidate"
+                      }
+                    }
+                  },
+                  "required": [
+                    "presets"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The profiles are not downloaded yet."
+          }
+        },
+        "description": "Searches the base presets by the words of the query, so a person can pick one when the match missed. The host authorizes the caller on this module before the route is called."
+      }
+    },
+    "/bundle": {
+      "post": {
+        "operationId": "write-bundle",
+        "summary": "Write a PrusaSlicer 2.9 Config Bundle",
+        "description": "One [filament:NAME] section per request, flattened so it imports alone.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "filaments": {
+                    "type": "array",
+                    "maxItems": 32,
+                    "items": {
+                      "$ref": "#/components/schemas/Request"
+                    }
+                  }
+                },
+                "required": [
+                  "filaments"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The .ini file.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is not valid."
+          },
+          "404": {
+            "description": "A preset or variant is not in the profiles."
+          },
+          "503": {
+            "description": "The profiles are not downloaded yet."
+          }
+        }
+      }
+    }
+  }
+}

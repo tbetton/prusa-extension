@@ -1,0 +1,7 @@
+{
+  "extends": "@prusa/frontend-standards/tsconfig.json",
+  "compilerOptions": {
+    "types": ["svelte", "vite/client", "node"]
+  },
+  "include": ["src", "*.config.ts", "*.config.js", ".prettierrc.js"]
+}
