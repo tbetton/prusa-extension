@@ -16,6 +16,7 @@
   "filament-profile.search": "Search another preset",
   "filament-profile.searchButton": "Search",
   "filament-profile.variant": "Settings for {variant}.",
+  "filament-profile.noFit": "No Prusa preset fits this printer and nozzle. Pick another printer, or search for a preset.",
   "filament-profile.noVariant": "No variant for this printer and nozzle. The base settings are used.",
   "filament-profile.download": "Download .ini for PrusaSlicer 2.9 ({count})",
   "filament-profile.downloaded": "{count} filament profile(s) written.",

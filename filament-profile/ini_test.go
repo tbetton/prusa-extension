@@ -64,6 +64,9 @@ filament_type = PETG
 
 [filament:Polymaker PolyLite PLA]
 inherits = *PLA*
+
+[filament:Filatech Wood-PLA]
+inherits = *PLA*
 `
 
 func TestParseKeepsFilamentSectionsOnly(t *testing.T) {
@@ -73,13 +76,13 @@ func TestParseKeepsFilamentSectionsOnly(t *testing.T) {
 		t.Fatalf("version = %q", c.Version)
 	}
 
-	if c.Len() != 10 {
-		t.Fatalf("sections = %d, want 10", c.Len())
+	if c.Len() != 11 {
+		t.Fatalf("sections = %d, want 11", c.Len())
 	}
 
 	want := []string{
 		"Prusament PLA", "Prusament PLA @COREONEINDX HF0.4", "Prusament PLA @COREONEINDX 0.25",
-		"Generic PLA", "Generic PLA @COREONEINDX HF0.4", "Generic PETG", "Polymaker PolyLite PLA",
+		"Generic PLA", "Generic PLA @COREONEINDX HF0.4", "Generic PETG", "Polymaker PolyLite PLA", "Filatech Wood-PLA",
 	}
 	if got := c.Presets(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("presets = %v, want %v", got, want)
@@ -169,6 +172,23 @@ func TestBestMatchesPrefersTheBrandAndEndsWithGeneric(t *testing.T) {
 
 	// No type, no generic: nothing to fall back to.
 	if got = c.BestMatches("Sunlu", "Mystery", "", 5); len(got) != 0 {
+		t.Fatalf("matches = %+v", got)
+	}
+}
+
+func TestBestMatchesOnlyTakesPresetsOfTheSpoolsBrand(t *testing.T) {
+	c := ParseCatalogue(fixture)
+
+	// "Filatech Wood-PLA" shares "wood" and "pla" with this spool, but it is
+	// another brand's: only the generic preset is offered.
+	got := c.BestMatches("Geeetech", "Wood PLA Poplar", "PLA", 20)
+	if len(got) != 1 || got[0].Preset != "Generic PLA" {
+		t.Fatalf("matches = %+v", got)
+	}
+
+	// With no brand named, the words alone decide.
+	got = c.BestMatches("", "Filatech Wood PLA", "PLA", 20)
+	if len(got) != 2 || got[0].Preset != "Filatech Wood-PLA" {
 		t.Fatalf("matches = %+v", got)
 	}
 }

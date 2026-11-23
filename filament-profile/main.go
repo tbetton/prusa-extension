@@ -29,7 +29,7 @@ import (
 
 const (
 	name    = "filament-profile"
-	release = extension.Version("0.2.0")
+	release = extension.Version("0.2.1")
 
 	defaultCatalogueURL = "https://storage.googleapis.com/prusa3d-content-prod-14e8-preset-repo-api-public/prusa-fff/prusa-fff-offline.zip"
 )
@@ -287,8 +287,12 @@ type bundleBody struct {
 	Filaments []Request `json:"filaments"`
 }
 
-// maxSearch bounds the answer of GET /presets.
-const maxSearch = 50
+// maxSearch bounds the answer of GET /presets, and maxMatches the one of
+// GET /match. A page filters them by printer, so more than a few come back.
+const (
+	maxSearch  = 50
+	maxMatches = 20
+)
 
 func (m *module) routes() http.Handler {
 	mux := http.NewServeMux()
@@ -328,7 +332,7 @@ func (m *module) routes() http.Handler {
 		variants := c.Variants()
 		out := []candidate{}
 
-		for _, hit := range c.BestMatches(q.Get("brand"), q.Get("name"), q.Get("type"), 5) {
+		for _, hit := range c.BestMatches(q.Get("brand"), q.Get("name"), q.Get("type"), maxMatches) {
 			out = append(out, candidate{Preset: hit.Preset, Score: hit.Score, Variants: nonNil(variants[hit.Preset])})
 		}
 

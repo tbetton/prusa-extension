@@ -216,13 +216,19 @@ type Match struct {
 // BestMatches ranks the base presets against a spool's brand, name and type.
 // A preset scores the share of its own words found in "brand name"; the brand
 // is worth a word of its own, so "Prusament PLA" beats "Generic PLA" for a
-// Prusament spool. The generic preset of the type always closes the list when
+// Prusament spool. When the spool names a brand, only that brand's presets
+// match. The generic preset of the type always closes the list when
 // it exists, so a person can build a profile for a brand the bundle does not
 // know. At most limit entries come back.
 func (c *Catalogue) BestMatches(brand, name, kind string, limit int) []Match {
 	have := map[string]bool{}
 	for _, w := range normalise(brand + " " + name) {
 		have[w] = true
+	}
+
+	brands := map[string]bool{}
+	for _, w := range normalise(brand) {
+		brands[w] = true
 	}
 
 	var out []Match
@@ -234,6 +240,12 @@ func (c *Catalogue) BestMatches(brand, name, kind string, limit int) []Match {
 
 		words := normalise(preset)
 		if len(words) == 0 {
+			continue
+		}
+
+		// A preset is a brand's: its first word names the brand, and it must be
+		// the spool's. "Filatech Wood-PLA" is not a Geeetech Wood PLA.
+		if len(brands) > 0 && !brands[words[0]] {
 			continue
 		}
 

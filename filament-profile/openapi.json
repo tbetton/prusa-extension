@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "filament-profile",
-    "version": "0.2.0",
+    "version": "0.2.1",
     "description": "PrusaSlicer 2.9 filament profiles for the spools on a printer. Every path is relative to the mount the host assigns."
   },
   "components": {
@@ -134,7 +134,7 @@
       "get": {
         "operationId": "match-filament",
         "summary": "The nearest Prusa presets for a spool",
-        "description": "Ranks the base presets against the spool's brand and name. The generic preset of the type closes the list.",
+        "description": "Ranks the base presets of the spool's brand against its name. The generic preset of the type closes the list.",
         "parameters": [
           {
             "name": "brand",
@@ -163,7 +163,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Up to five presets.",
+            "description": "Up to twenty presets.",
             "content": {
               "application/json": {
                 "schema": {

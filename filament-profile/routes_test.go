@@ -90,7 +90,7 @@ func TestCatalogueStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !got.Ready || got.Version != "2.5.16" || got.Presets != 7 {
+	if !got.Ready || got.Version != "2.5.16" || got.Presets != 8 {
 		t.Fatalf("status = %+v", got)
 	}
 }

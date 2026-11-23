@@ -119,10 +119,31 @@
   const candidateOf = (row: Row): Candidate | undefined =>
     row.candidates.find((candidate) => candidate.preset === row.preset);
 
+  // With a printer chosen, only the presets that have a variant for it and for
+  // the tool's nozzle: any other is incompatible, and PrusaSlicer flags it red.
+  const usable = (row: Row): Candidate[] =>
+    family === ''
+      ? row.candidates
+      : row.candidates.filter(
+          (candidate) => pickVariant(candidate.variants, family, row.tool.nozzle) !== '',
+        );
+
   const variantOf = (row: Row): string =>
     pickVariant(candidateOf(row)?.variants ?? [], family, row.tool.nozzle);
 
   const families = $derived(familiesOf(rows.flatMap((row) => (row.include ? (candidateOf(row)?.variants ?? []) : []))));
+
+  // When the printer or the candidates change, move a row off a preset that no
+  // longer fits it, onto the first that does.
+  $effect(() => {
+    for (const row of rows) {
+      const list = usable(row);
+      const first = list[0];
+      if (!list.some((candidate) => candidate.preset === row.preset)) {
+        row.preset = first?.preset ?? '';
+      }
+    }
+  });
 
   const matchAll = async (): Promise<void> => {
     await Promise.all(
@@ -327,9 +348,9 @@
               <select
                 class="h-8 rounded-md border border-input bg-background px-2 text-sm text-foreground"
                 bind:value={row.preset}
-                disabled={row.candidates.length === 0}
+                disabled={usable(row).length === 0}
               >
-                {#each row.candidates as candidate (candidate.preset)}
+                {#each usable(row) as candidate (candidate.preset)}
                   <option value={candidate.preset}>{candidate.preset}</option>
                 {/each}
               </select>
@@ -351,6 +372,9 @@
                 {t('filament-profile.searchButton')}
               </Button>
             </form>
+            {#if row.candidates.length > 0 && usable(row).length === 0}
+              <p class="text-xs text-destructive">{t('filament-profile.noFit')}</p>
+            {/if}
             {#if row.preset !== ''}
               <p class="text-xs text-muted-foreground">
                 {variant !== ''
