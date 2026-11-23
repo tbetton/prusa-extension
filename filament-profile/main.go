@@ -1,8 +1,8 @@
 // Command filament-profile is a Prusa Connect module that writes PrusaSlicer
 // 2.9 filament profiles for the spools loaded on a printer's tools. It reads
-// the profiles Prusa Research publishes, finds the nearest preset for each
-// spool, and writes one Config Bundle (.ini) a person imports into
-// PrusaSlicer.
+// the profiles Prusa Research and other sources publish, finds the nearest
+// preset for each spool that fits the printer, and writes one Config Bundle
+// (.ini) a person imports into PrusaSlicer.
 package main
 
 import (
@@ -29,9 +29,7 @@ import (
 
 const (
 	name    = "filament-profile"
-	release = extension.Version("0.4.0")
-
-	defaultCatalogueURL = "https://storage.googleapis.com/prusa3d-content-prod-14e8-preset-repo-api-public/prusa-fff/prusa-fff-offline.zip"
+	release = extension.Version("0.5.0")
 )
 
 // Settings is what an operator writes under this instance's config block. The
@@ -39,11 +37,18 @@ const (
 type Settings struct {
 	CatalogueURL string `json:"catalogue_url"`
 	RefreshDays  int    `json:"refresh_days"`
+	Sources      string `json:"sources"`
+	PolymakerURL string `json:"polymaker_url"`
+	CustomURLs   string `json:"custom_urls"`
 }
 
 func (s Settings) withDefaults() Settings {
 	if strings.TrimSpace(s.CatalogueURL) == "" {
 		s.CatalogueURL = defaultCatalogueURL
+	}
+
+	if strings.TrimSpace(s.PolymakerURL) == "" {
+		s.PolymakerURL = defaultPolymakerURL
 	}
 
 	if s.RefreshDays <= 0 {
@@ -100,7 +105,7 @@ func run() error {
 		return fmt.Errorf("write the handshake: %w", err)
 	}
 
-	m := &module{ctx: ctx, client: &http.Client{Timeout: 2 * time.Minute}}
+	m := &module{ctx: ctx, client: &http.Client{Timeout: 3 * time.Minute}}
 
 	conn, err := wirerpc.NewConn(stdio{}, wirerpc.Options{
 		Role:    wirerpc.RoleChild,
@@ -142,8 +147,8 @@ func (m *module) methods() wirerpc.Methods {
 	}
 }
 
-// configure reads the catalogue kept in the data directory, and downloads a
-// fresh one when there is none or it is older than refresh_days.
+// configure reads the sources kept in the data directory, and downloads them
+// when one is missing or older than refresh_days.
 func (m *module) configure(_ context.Context, sent Settings, grants wirerpc.Grants) error {
 	settings := sent.withDefaults()
 
@@ -160,20 +165,15 @@ func (m *module) configure(_ context.Context, sent Settings, grants wirerpc.Gran
 
 	m.settings, m.dir, m.configured = settings, grants.Data, true
 
-	stale := true
+	if c, err := assemble(grants.Data, settings); err == nil {
+		m.catalogue = c
 
-	if data, err := os.ReadFile(filepath.Join(grants.Data, bundleFile)); err == nil {
-		if c := ParseCatalogue(string(data)); c.Len() > 0 {
-			m.catalogue = c
-
-			if info, err := os.Stat(filepath.Join(grants.Data, bundleFile)); err == nil {
-				m.updated = info.ModTime()
-				stale = time.Since(info.ModTime()) > time.Duration(settings.RefreshDays)*24*time.Hour
-			}
+		if info, err := os.Stat(filepath.Join(grants.Data, bundleFile)); err == nil {
+			m.updated = info.ModTime()
 		}
 	}
 
-	if stale {
+	if stale(grants.Data, settings) {
 		m.refreshing = true
 
 		go m.refresh()
@@ -182,13 +182,15 @@ func (m *module) configure(_ context.Context, sent Settings, grants wirerpc.Gran
 	return nil
 }
 
-// refresh downloads the catalogue and swaps it in. Callers set m.refreshing
-// first, so two downloads never run together.
+// refresh downloads the sources and swaps the catalogue in. Callers set
+// m.refreshing first, so two downloads never run together. A source that fails
+// is reported and the others still load.
 func (m *module) refresh() {
-	ctx, cancel := context.WithTimeout(m.ctx, 3*time.Minute)
+	ctx, cancel := context.WithTimeout(m.ctx, 5*time.Minute)
 	defer cancel()
 
-	c, data, err := m.fetchCatalogue(ctx)
+	problems := fetchSources(ctx, m.client, m.dir, m.settings)
+	c, err := assemble(m.dir, m.settings)
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -196,50 +198,33 @@ func (m *module) refresh() {
 	m.refreshing = false
 
 	if err != nil {
-		m.lastError = err.Error()
-		logf("catalogue refresh failed: %v", err)
+		problems = append(problems, err.Error())
+	}
 
+	m.lastError = strings.Join(problems, "; ")
+
+	for _, problem := range problems {
+		logf("catalogue refresh: %s", problem)
+	}
+
+	if err != nil {
 		return
 	}
 
-	if err = saveBundle(m.dir, data); err != nil {
-		m.lastError = err.Error()
-		logf("%v", err)
-
-		return
-	}
-
-	m.catalogue, m.updated, m.lastError = c, time.Now(), ""
-	logf("catalogue %s loaded: %d filament sections", c.Version, c.Len())
-}
-
-func (m *module) fetchCatalogue(ctx context.Context) (*Catalogue, []byte, error) {
-	archive, err := download(ctx, m.client, m.settings.CatalogueURL)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	data, err := newestBundle(archive)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	c := ParseCatalogue(string(data))
-	if c.Len() == 0 {
-		return nil, nil, errors.New("the bundle holds no filament preset")
-	}
-
-	return c, data, nil
+	m.catalogue, m.updated = c, time.Now()
+	logf("catalogue %s loaded: %d filament sections, %d printers", c.Version, c.Len(), len(c.printerOrder))
 }
 
 // status is the answer of GET /catalogue.
 type status struct {
-	Ready      bool       `json:"ready"`
-	Refreshing bool       `json:"refreshing"`
-	Version    string     `json:"version,omitempty"`
-	Presets    int        `json:"presets"`
-	UpdatedAt  *time.Time `json:"updated_at,omitempty"`
-	Error      string     `json:"error,omitempty"`
+	Ready      bool           `json:"ready"`
+	Refreshing bool           `json:"refreshing"`
+	Version    string         `json:"version,omitempty"`
+	Presets    int            `json:"presets"`
+	Sources    map[string]int `json:"sources,omitempty"`
+	Enabled    []string       `json:"enabled,omitempty"`
+	UpdatedAt  *time.Time     `json:"updated_at,omitempty"`
+	Error      string         `json:"error,omitempty"`
 }
 
 func (m *module) status() status {
@@ -249,6 +234,7 @@ func (m *module) status() status {
 	s := status{Refreshing: m.refreshing, Error: m.lastError}
 	if m.catalogue != nil {
 		s.Ready, s.Version, s.Presets = true, m.catalogue.Version, len(m.catalogue.Presets())
+		s.Sources, s.Enabled = m.catalogue.Counts(), parseSources(m.settings.Sources)
 		updated := m.updated
 		s.UpdatedAt = &updated
 	}
@@ -276,14 +262,22 @@ func (m *module) ready(w http.ResponseWriter, r *http.Request) *Catalogue {
 	return m.catalogue
 }
 
-// candidate is one preset offered for a spool, with the printer variants it has.
+// candidate is one preset offered for a spool.
 type candidate struct {
-	Preset   string   `json:"preset"`
-	Score    float64  `json:"score"`
+	Preset string  `json:"preset"`
+	Score  float64 `json:"score"`
+	// Source is where the preset comes from.
+	Source string `json:"source,omitempty"`
+	// Section is the section written for the printer asked about, and Adapted
+	// says the preset does not fit it as written: its material settings are
+	// laid over a generic preset of the printer.
+	Section  string   `json:"section,omitempty"`
+	Adapted  bool     `json:"adapted,omitempty"`
 	Variants []string `json:"variants"`
 }
 
 type bundleBody struct {
+	Printer   string    `json:"printer"`
 	Filaments []Request `json:"filaments"`
 }
 
@@ -293,6 +287,36 @@ const (
 	maxSearch  = 50
 	maxMatches = 20
 )
+
+// describe fills a candidate for a base preset, and for the printer when one
+// is named.
+func describe(c *Catalogue, base, printer string, score float64, variants map[string][]string) candidate {
+	cand := candidate{Preset: base, Score: score, Source: c.BaseSource(base), Variants: nonNil(variants[base])}
+
+	if printer != "" {
+		if res, err := c.Resolve(base, printer); err == nil {
+			cand.Section, cand.Adapted = res.Section, res.Reference != ""
+		}
+	}
+
+	return cand
+}
+
+// fitFor returns the filter of presets that fit a printer, or nil for none. It
+// refuses a printer the bundle does not hold.
+func fitFor(w http.ResponseWriter, r *http.Request, c *Catalogue, printer string) (func(string) bool, bool) {
+	if printer == "" {
+		return nil, true
+	}
+
+	if !c.HasPrinter(printer) {
+		refuse(w, r, NoPreset.New("no such printer preset: "+printer))
+
+		return nil, false
+	}
+
+	return func(base string) bool { return c.Fits(base, printer) }, true
+}
 
 func (m *module) routes() http.Handler {
 	mux := http.NewServeMux()
@@ -321,7 +345,17 @@ func (m *module) routes() http.Handler {
 		answer(w, http.StatusAccepted, m.status())
 	})
 
-	// The nearest presets for one spool, and the printer variants of each.
+	// The printer presets of PrusaSlicer, to choose the one a bundle forces.
+	mux.HandleFunc("GET /printers", func(w http.ResponseWriter, r *http.Request) {
+		c := m.ready(w, r)
+		if c == nil {
+			return
+		}
+
+		answer(w, http.StatusOK, map[string]any{"printers": c.Printers(normalise(r.URL.Query().Get("q")))})
+	})
+
+	// The nearest presets for one spool, and for a printer the ones that fit it.
 	mux.HandleFunc("GET /match", func(w http.ResponseWriter, r *http.Request) {
 		c := m.ready(w, r)
 		if c == nil {
@@ -329,11 +363,18 @@ func (m *module) routes() http.Handler {
 		}
 
 		q := r.URL.Query()
+		printer := q.Get("printer")
+
+		fit, ok := fitFor(w, r, c, printer)
+		if !ok {
+			return
+		}
+
 		variants := c.Variants()
 		out := []candidate{}
 
-		for _, hit := range c.BestMatches(q.Get("brand"), q.Get("name"), q.Get("type"), maxMatches) {
-			out = append(out, candidate{Preset: hit.Preset, Score: hit.Score, Variants: nonNil(variants[hit.Preset])})
+		for _, hit := range c.BestMatches(q.Get("brand"), q.Get("name"), q.Get("type"), maxMatches, fit) {
+			out = append(out, describe(c, hit.Preset, printer, hit.Score, variants))
 		}
 
 		answer(w, http.StatusOK, map[string]any{"matches": out})
@@ -346,25 +387,28 @@ func (m *module) routes() http.Handler {
 			return
 		}
 
-		words := normalise(r.URL.Query().Get("q"))
-		variants := c.Variants()
-		bases := make([]string, 0, len(variants))
+		q := r.URL.Query()
+		printer := q.Get("printer")
 
-		for base := range variants {
-			bases = append(bases, base)
+		fit, ok := fitFor(w, r, c, printer)
+		if !ok {
+			return
 		}
+
+		words := normalise(q.Get("q"))
+		variants := c.Variants()
+		bases := c.Bases()
 
 		sort.Strings(bases)
 
 		out := []candidate{}
 
 		for _, base := range bases {
-			have := strings.Join(normalise(base), " ")
-			if !containsAll(have, words) {
+			if !containsAll(strings.Join(normalise(base), " "), words) || (fit != nil && !fit(base)) {
 				continue
 			}
 
-			out = append(out, candidate{Preset: base, Variants: nonNil(variants[base])})
+			out = append(out, describe(c, base, printer, 0, variants))
 			if len(out) == maxSearch {
 				break
 			}
@@ -384,9 +428,9 @@ func (m *module) routes() http.Handler {
 			return
 		}
 
-		text, err := c.Bundle(body.Filaments)
+		text, err := c.Bundle(strings.TrimSpace(body.Printer), body.Filaments)
 		if err != nil {
-			if errors.Is(err, errNoPreset) {
+			if errors.Is(err, errNoPreset) || errors.Is(err, errNoPrinter) {
 				refuse(w, r, NoPreset.New(err.Error()))
 			} else {
 				refuse(w, r, BadRequest.New(err.Error()))

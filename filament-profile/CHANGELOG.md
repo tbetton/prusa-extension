@@ -7,6 +7,14 @@ Write the entry in the same change as the code. One bullet per behaviour a
 person outside this repository can observe: a route, a setting, a screen, a
 refusal. Name the route and the setting key, never a function or a file.
 
+## 0.5.0
+
+- Choose the PrusaSlicer printer on the **Filament Profile** tab, from the printer presets of the Prusa profiles (`GET /printers`). The tab offers only the filament presets PrusaSlicer itself lists for that printer: each preset's compatibility condition is evaluated against the printer, so a preset made for another printer is no longer offered and no longer flagged red. `GET /match` and `GET /presets` take a `printer`, and `POST /bundle` takes a `printer` instead of a variant per filament.
+- Force that printer in the exported config: the bundle's `[presets]` section now selects the printer, then each profile in the filament of its tool.
+- Add sources of filament presets, chosen with the new `sources` setting (default `prusa,polymaker`): `prusa`, `polymaker` and `custom`. The Prusa bundle is always loaded, for its printers and generic presets. Polymaker's own presets (`Polymaker3D/Polymaker-Preset`, MIT) are read from `polymaker_url`; they are made for the CORE One, and on a printer of that family that does not list them, their temperatures, fans and retraction are laid over the printer's generic preset, with a flow no higher than that preset's. `custom_urls` adds PrusaSlicer config bundles of your own (https, at most 8).
+- Each preset in the tab names its source, and an adapted preset says so.
+- The module keeps up to 128 MiB, for the extra sources and the compatibility cache.
+
 ## 0.4.0
 
 - Work without the Materials extension. When it is not installed, stopped, or does not follow the printer, the **Filament Profile** tab reads the tools from the printer itself: the nozzle and the type of material it reports (PLA, PETG…). The profiles then start from the generic preset of that type. The brand, the product, the colour and the maker's temperatures need Materials, and the tab says so.

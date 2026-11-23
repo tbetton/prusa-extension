@@ -154,10 +154,10 @@ func download(ctx context.Context, client *http.Client, address string) ([]byte,
 	return data, nil
 }
 
-// saveBundle keeps the bundle in the data directory, through a temporary file
-// so a crash never leaves half a catalogue.
-func saveBundle(dir string, data []byte) error {
-	tmp, err := os.CreateTemp(dir, bundleFile+".*")
+// saveBundle keeps a bundle in the data directory under name, through a
+// temporary file so a crash never leaves half a catalogue.
+func saveBundle(dir, name string, data []byte) error {
+	tmp, err := os.CreateTemp(dir, name+".*")
 	if err != nil {
 		return fmt.Errorf("save the catalogue: %w", err)
 	}
@@ -174,7 +174,7 @@ func saveBundle(dir string, data []byte) error {
 		return fmt.Errorf("save the catalogue: %w", err)
 	}
 
-	if err = os.Rename(tmp.Name(), filepath.Join(dir, bundleFile)); err != nil {
+	if err = os.Rename(tmp.Name(), filepath.Join(dir, name)); err != nil {
 		return fmt.Errorf("save the catalogue: %w", err)
 	}
 

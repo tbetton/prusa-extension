@@ -8,7 +8,7 @@ import (
 func TestBundleWritesAFlatSection(t *testing.T) {
 	c := ParseCatalogue(fixture)
 
-	text, err := c.Bundle([]Request{{
+	text, err := c.Bundle("", []Request{{
 		Name:      "Polymaker PolyLite™ PLA Black",
 		Vendor:    "Polymaker",
 		Base:      "Generic PLA",
@@ -48,7 +48,7 @@ func TestBundleWritesAFlatSection(t *testing.T) {
 func TestBundleKeepsTheBaseColourWithoutOne(t *testing.T) {
 	c := ParseCatalogue(fixture)
 
-	text, err := c.Bundle([]Request{{Name: "Mine", Base: "Prusament PLA", ColorRGBA: "red"}})
+	text, err := c.Bundle("", []Request{{Name: "Mine", Base: "Prusament PLA", ColorRGBA: "red"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestBundleRefusesWhatItCannotWrite(t *testing.T) {
 	}
 
 	for label, requests := range cases {
-		if _, err := c.Bundle(requests); err == nil {
+		if _, err := c.Bundle("", requests); err == nil {
 			t.Errorf("%s: no error", label)
 		}
 	}
@@ -89,7 +89,7 @@ func TestPresetNameIsAFileName(t *testing.T) {
 func TestBundleSelectsTheProfilesInTheirSlots(t *testing.T) {
 	c := ParseCatalogue(fixture)
 
-	text, err := c.Bundle([]Request{
+	text, err := c.Bundle("", []Request{
 		{Name: "Third", Base: "Generic PLA", Slot: 3},
 		{Name: "First", Base: "Generic PLA", Variant: "COREONEINDX HF0.4", Slot: 1},
 		{Name: "Loose", Base: "Generic PETG"},
@@ -109,7 +109,7 @@ func TestBundleSelectsTheProfilesInTheirSlots(t *testing.T) {
 }
 
 func TestBundleWritesNoPresetsWithoutSlots(t *testing.T) {
-	text, err := ParseCatalogue(fixture).Bundle([]Request{{Name: "Mine", Base: "Generic PLA"}})
+	text, err := ParseCatalogue(fixture).Bundle("", []Request{{Name: "Mine", Base: "Generic PLA"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestBundleRefusesABadSlot(t *testing.T) {
 	}
 
 	for label, requests := range cases {
-		if _, err := c.Bundle(requests); err == nil {
+		if _, err := c.Bundle("", requests); err == nil {
 			t.Errorf("%s: no error", label)
 		}
 	}
@@ -149,7 +149,7 @@ filament_density = 1.24
 func write(t *testing.T, p *Properties) string {
 	t.Helper()
 
-	text, err := ParseCatalogue(propertiesFixture).Bundle([]Request{{Name: "Mine", Base: "Base", Properties: p}})
+	text, err := ParseCatalogue(propertiesFixture).Bundle("", []Request{{Name: "Mine", Base: "Base", Properties: p}})
 	if err != nil {
 		t.Fatal(err)
 	}

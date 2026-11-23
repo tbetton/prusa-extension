@@ -14,6 +14,7 @@
   import {
     getCatalogue,
     getMaterial,
+    listPrinters,
     listTools,
     matchFilament,
     ProfileError,
@@ -21,6 +22,7 @@
     searchPresets,
     writeBundle,
     type Candidate,
+    type Printer,
     type Properties,
     type Request,
     type Status,
@@ -29,7 +31,7 @@
   } from './api';
   import { heldHost } from './host';
   import { compareToolIds, toolName } from './labels';
-  import { familiesOf, nozzleToken, pickVariant } from './variants';
+  import { nozzleToken } from './variants';
 
   interface Props {
     /** The device this tab is about. It is the only prop a tab receives. */
@@ -52,7 +54,7 @@
     candidates: Candidate[];
     preset: string;
     query: string;
-    /** What the last search found, and how much of it fits the printer. */
+    /** What the last search found. */
     searchNote: string;
     /** What the catalogue says of the material, when it says anything useful. */
     properties: Properties | undefined;
@@ -68,12 +70,17 @@
   /** The ids of every tool in the printer's order: a tool's place is its slot in PrusaSlicer. */
   let order = $state<string[]>([]);
   let status = $state<Status | undefined>(undefined);
-  let family = $state('');
+  /** The printer preset of PrusaSlicer the bundle forces, and what is known of it. */
+  let printer = $state('');
+  let printerInfo = $state<Printer | undefined>(undefined);
+  let printers = $state<Printer[]>([]);
+  let printerQuery = $state('');
   let loading = $state(true);
+  let matching = $state(false);
   let busy = $state(false);
   let problem = $state<string | undefined>(undefined);
 
-  const familyKey = `filament-profile.family.${deviceId}`;
+  const printerKey = `filament-profile.printer.${deviceId}`;
 
   const message = (error: unknown): string => {
     if (error instanceof ProfileError) {
@@ -150,43 +157,43 @@
   const candidateOf = (row: Row): Candidate | undefined =>
     row.candidates.find((candidate) => candidate.preset === row.preset);
 
-  // With a printer chosen, only the presets that have a variant for it and for
-  // the tool's nozzle: any other is incompatible, and PrusaSlicer flags it red.
-  const usable = (row: Row): Candidate[] =>
-    family === ''
-      ? row.candidates
-      : row.candidates.filter(
-          (candidate) => pickVariant(candidate.variants, family, row.tool.nozzle) !== '',
-        );
+  /** A preset in a list: its name, its source when it is not Prusa's, and whether it is adapted. */
+  const candidateLabel = (candidate: Candidate): string =>
+    [
+      candidate.preset,
+      candidate.source !== undefined && candidate.source !== 'prusa' ? `· ${candidate.source}` : '',
+      candidate.adapted === true ? `(${t('filament-profile.adapted')})` : '',
+    ]
+      .filter((part) => part !== '')
+      .join(' ');
 
-  const variantOf = (row: Row): string =>
-    pickVariant(candidateOf(row)?.variants ?? [], family, row.tool.nozzle);
+  const printerLabel = (p: Printer): string =>
+    `${String(p.nozzle_diameter ?? '')}${p.high_flow ? ' HF' : ''}`.trim();
 
-  const families = $derived(familiesOf(rows.flatMap((row) => (row.include ? (candidateOf(row)?.variants ?? []) : []))));
-
-  // When the printer or the candidates change, move a row off a preset that no
-  // longer fits it, onto the first that does.
-  $effect(() => {
-    for (const row of rows) {
-      const list = usable(row);
-      const first = list[0];
-      if (!list.some((candidate) => candidate.preset === row.preset)) {
-        row.preset = first?.preset ?? '';
-      }
-    }
-  });
+  /** The nozzle of a printer preset differs from the one the tool has. */
+  const nozzleDiffers = (row: Row): boolean =>
+    printerInfo !== undefined &&
+    printerInfo.nozzle_diameter !== undefined &&
+    (printerInfo.nozzle_diameter !== row.tool.nozzle.diameter_mm ||
+      printerInfo.high_flow !== row.tool.nozzle.high_flow);
 
   const matchAll = async (): Promise<void> => {
-    await Promise.all(
-      rows.map(async (row) => {
-        try {
-          row.candidates = await matchFilament(row.brand, row.material, row.type, host.signal);
-          row.preset = row.candidates[0]?.preset ?? '';
-        } catch (error) {
-          problem = message(error);
-        }
-      }),
-    );
+    matching = true;
+    try {
+      await Promise.all(
+        rows.map(async (row) => {
+          try {
+            row.candidates = await matchFilament(row.brand, row.material, row.type, printer, host.signal);
+            row.preset = row.candidates[0]?.preset ?? '';
+            row.searchNote = '';
+          } catch (error) {
+            problem = message(error);
+          }
+        }),
+      );
+    } finally {
+      matching = false;
+    }
   };
 
   const loadProperties = async (): Promise<void> => {
@@ -204,6 +211,52 @@
     );
   };
 
+  const searchPrinters = async (): Promise<void> => {
+    try {
+      printers = await listPrinters(printerQuery.trim(), host.signal);
+    } catch (error) {
+      problem = message(error);
+    }
+  };
+
+  const remember = (value: string): void => {
+    try {
+      localStorage.setItem(printerKey, value);
+    } catch {
+      // Storage may be blocked; the choice then lasts for this visit only.
+    }
+  };
+
+  const choosePrinter = async (name: string): Promise<void> => {
+    printer = name;
+    printerInfo = name === '' ? undefined : (printers.find((p) => p.name === name) ?? printerInfo);
+    remember(name);
+    if (status?.ready) await matchAll();
+  };
+
+  // The printer chosen last time, with what is known of it.
+  const restorePrinter = async (): Promise<void> => {
+    let stored = '';
+    try {
+      stored = localStorage.getItem(printerKey) ?? '';
+    } catch {
+      // See above.
+    }
+
+    if (stored === '') return;
+
+    try {
+      const found = await listPrinters(stored, host.signal);
+      const exact = found.find((p) => p.name === stored);
+      if (exact) {
+        printer = stored;
+        printerInfo = exact;
+      }
+    } catch {
+      // The printer list is not there yet: the choice is made again.
+    }
+  };
+
   const load = async (): Promise<void> => {
     loading = true;
     problem = undefined;
@@ -219,7 +272,11 @@
       order = tools.map((tool) => tool.id).sort(compareToolIds);
       rows = tools.flatMap((tool) => rowOf(tool) ?? []);
       void loadProperties();
-      if (state.ready) await matchAll();
+      if (state.ready) {
+        await restorePrinter();
+        await searchPrinters();
+        await matchAll();
+      }
     } catch (error) {
       problem = message(error);
     } finally {
@@ -233,7 +290,11 @@
       await new Promise((resolve) => setTimeout(resolve, 3000));
       try {
         status = await getCatalogue(host.signal);
-        if (status.ready) await matchAll();
+        if (status.ready) {
+          await restorePrinter();
+          await searchPrinters();
+          await matchAll();
+        }
       } catch {
         return;
       }
@@ -241,42 +302,25 @@
   };
 
   onMount(() => {
-    try {
-      family = localStorage.getItem(familyKey) ?? '';
-    } catch {
-      // Storage may be blocked; the choice then lasts for this visit only.
-    }
     void load().then(wait);
   });
-
-  const chooseFamily = (value: string): void => {
-    family = value;
-    try {
-      localStorage.setItem(familyKey, value);
-    } catch {
-      // See above.
-    }
-  };
 
   const search = async (row: Row): Promise<void> => {
     const query = row.query.trim();
     try {
-      const found = await searchPresets(query, host.signal);
-      const fits = (candidate: Candidate): boolean =>
-        family === '' || pickVariant(candidate.variants, family, row.tool.nozzle) !== '';
-      const fitting = found.filter(fits);
+      const found = await searchPresets(query, printer, host.signal);
 
       // The presets already offered stay: a search adds to the list, it does not replace it.
       const seen = new Set(found.map((candidate) => candidate.preset));
       row.candidates = [...found, ...row.candidates.filter((candidate) => !seen.has(candidate.preset))];
-      if (fitting[0]) row.preset = fitting[0].preset;
+      if (found[0]) row.preset = found[0].preset;
 
       row.searchNote =
         found.length === 0
-          ? t('filament-profile.noResults', { query })
-          : fitting.length === 0
-            ? t('filament-profile.noneFit', { count: String(found.length) })
-            : t('filament-profile.someFit', { fit: String(fitting.length), count: String(found.length) });
+          ? t(printer === '' ? 'filament-profile.noResults' : 'filament-profile.noResultsFit', { query })
+          : t(printer === '' ? 'filament-profile.foundAny' : 'filament-profile.foundFit', {
+              count: String(found.length),
+            });
     } catch (error) {
       problem = message(error);
     }
@@ -302,14 +346,13 @@
             name: row.profileName,
             slot: slotOf(row),
             base: row.preset,
-            variant: variantOf(row),
           };
           if (row.brand !== '') request.vendor = row.brand;
           if (row.color !== '') request.color_rgba = row.color;
           if (useOf(row) && row.properties) request.properties = row.properties;
           return request;
         });
-      const text = await writeBundle(filaments);
+      const text = await writeBundle(printer, filaments);
       const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
       const link = document.createElement('a');
       link.href = url;
@@ -324,10 +367,22 @@
     }
   };
 
+  const sourcesLine = $derived(
+    Object.entries(status?.sources ?? {})
+      .filter(([id]) => status?.enabled?.includes(id) === true)
+      .map(([id, count]) => `${id} ${String(count)}`)
+      .join(' · '),
+  );
+
   // PrusaSlicer reads the selection only when filament 1 is among the profiles.
   const slotGap = $derived(
     rows.some((row) => row.include && row.preset !== '') &&
       !rows.some((row) => row.include && row.preset !== '' && slotOf(row) === 1),
+  );
+
+  const tooManyTools = $derived(
+    printerInfo !== undefined &&
+      rows.some((row) => row.include && row.preset !== '' && slotOf(row) > (printerInfo?.extruders ?? 0)),
   );
 
   const chosen = $derived(rows.filter((row) => row.include && row.preset !== '').length);
@@ -338,6 +393,9 @@
     <p class="text-sm text-muted-foreground">
       {#if status?.ready}
         {t('filament-profile.catalogue', { version: status.version ?? '', count: String(status.presets) })}
+        {#if sourcesLine !== ''}
+          {t('filament-profile.sources', { list: sourcesLine })}
+        {/if}
       {:else if status}
         {t('filament-profile.downloading')}
       {/if}
@@ -363,25 +421,51 @@
   {:else if rows.length === 0 && !problem}
     <EmptyState size="sm" heading={t('filament-profile.empty.title')} description={t('filament-profile.empty.body')} />
   {:else if rows.length > 0}
-    <div class="flex flex-wrap items-center gap-2">
-      <label class="text-sm font-medium" for="fp-family">{t('filament-profile.family')}</label>
-      <select
-        id="fp-family"
-        class="h-8 rounded-md border border-input bg-background px-2 text-sm"
-        value={family}
-        onchange={(event) => chooseFamily(event.currentTarget.value)}
+    <div class="flex flex-col gap-2">
+      <label class="text-sm font-medium" for="fp-printer">{t('filament-profile.printer')}</label>
+      <form
+        class="flex flex-wrap items-center gap-2"
+        onsubmit={(event) => {
+          event.preventDefault();
+          void searchPrinters();
+        }}
       >
-        <option value="">{t('filament-profile.familyNone')}</option>
-        {#each families as option (option)}
-          <option value={option}>{option}</option>
+        <input
+          class="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-sm"
+          aria-label={t('filament-profile.printerSearch')}
+          placeholder={t('filament-profile.printerSearch')}
+          bind:value={printerQuery}
+        />
+        <Button size="sm" variant="secondary" type="submit">{t('filament-profile.searchButton')}</Button>
+      </form>
+      <select
+        id="fp-printer"
+        class="h-8 rounded-md border border-input bg-background px-2 text-sm"
+        value={printer}
+        onchange={(event) => void choosePrinter(event.currentTarget.value)}
+      >
+        <option value="">{t('filament-profile.printerPick')}</option>
+        {#if printerInfo !== undefined && !printers.some((p) => p.name === printer)}
+          <option value={printerInfo.name}>{printerInfo.name}</option>
+        {/if}
+        {#each printers as option (option.name)}
+          <option value={option.name}>{option.name} ({printerLabel(option)})</option>
         {/each}
       </select>
+      <p class="text-xs text-muted-foreground">
+        {printer === '' ? t('filament-profile.needPrinter') : t('filament-profile.printerHint')}
+      </p>
+      {#if tooManyTools}
+        <p class="text-xs text-destructive">
+          {t('filament-profile.fewExtruders', { count: String(printerInfo?.extruders ?? 0) })}
+        </p>
+      {/if}
     </div>
 
     <div class="grid gap-3 md:grid-cols-2">
       {#each rows as row (row.tool.id)}
-        {@const variant = variantOf(row)}
         {@const color = swatch(row.color)}
+        {@const picked = candidateOf(row)}
         <Card class="min-w-0">
           <CardHeader>
             <div class="flex items-center justify-between gap-2">
@@ -414,10 +498,10 @@
               <select
                 class="h-8 rounded-md border border-input bg-background px-2 text-sm text-foreground"
                 bind:value={row.preset}
-                disabled={usable(row).length === 0}
+                disabled={row.candidates.length === 0}
               >
-                {#each usable(row) as candidate (candidate.preset)}
-                  <option value={candidate.preset}>{candidate.preset}</option>
+                {#each row.candidates as candidate (candidate.preset)}
+                  <option value={candidate.preset}>{candidateLabel(candidate)}</option>
                 {/each}
               </select>
             </label>
@@ -441,7 +525,7 @@
             {#if row.searchNote !== ''}
               <p class="text-xs text-muted-foreground" role="status">{row.searchNote}</p>
             {/if}
-            {#if row.candidates.length > 0 && usable(row).length === 0}
+            {#if printer !== '' && row.candidates.length === 0 && !matching}
               <p class="text-xs text-destructive">{t('filament-profile.noFit')}</p>
             {/if}
             {#if row.properties}
@@ -454,11 +538,18 @@
                 {t('filament-profile.useCatalogue')} ({summaryOf(row.properties)})
               </label>
             {/if}
-            {#if row.preset !== ''}
+            {#if picked?.section}
+              <p class="text-xs text-muted-foreground">{t('filament-profile.section', { section: picked.section })}</p>
+            {/if}
+            {#if picked?.adapted === true}
+              <p class="text-xs text-destructive">{t('filament-profile.adaptedNote')}</p>
+            {/if}
+            {#if nozzleDiffers(row) && printerInfo}
               <p class="text-xs text-muted-foreground">
-                {variant !== ''
-                  ? t('filament-profile.variant', { variant })
-                  : t('filament-profile.noVariant')}
+                {t('filament-profile.nozzleDiffers', {
+                  tool: nozzleToken(row.tool.nozzle),
+                  printer: printerLabel(printerInfo),
+                })}
               </p>
             {/if}
           </CardContent>
@@ -467,7 +558,7 @@
     </div>
 
     <div>
-      <Button disabled={busy || chosen === 0} onclick={download}>
+      <Button disabled={busy || chosen === 0 || printer === ''} onclick={download}>
         {t('filament-profile.download', { count: String(chosen) })}
       </Button>
       <p class="mt-2 text-xs text-muted-foreground">{t('filament-profile.importHint')}</p>

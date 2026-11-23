@@ -153,25 +153,25 @@ func TestVariantsListsTheSuffixesOfEachBase(t *testing.T) {
 func TestBestMatchesPrefersTheBrandAndEndsWithGeneric(t *testing.T) {
 	c := ParseCatalogue(fixture)
 
-	got := c.BestMatches("Prusament", "PLA Galaxy Black", "PLA", 5)
+	got := c.BestMatches("Prusament", "PLA Galaxy Black", "PLA", 5, nil)
 	if len(got) != 2 || got[0].Preset != "Prusament PLA" || got[1].Preset != "Generic PLA" {
 		t.Fatalf("matches = %+v", got)
 	}
 
 	// A brand the bundle knows nothing about still gets the generic preset.
-	got = c.BestMatches("Sunlu", "High Speed PLA Yellow", "pla", 5)
+	got = c.BestMatches("Sunlu", "High Speed PLA Yellow", "pla", 5, nil)
 	if len(got) != 1 || got[0].Preset != "Generic PLA" {
 		t.Fatalf("matches = %+v", got)
 	}
 
 	// "Polymaker PolyLite PLA" is a real match for a Polymaker spool.
-	got = c.BestMatches("Polymaker", "PolyLite™ PLA Black", "PLA", 5)
+	got = c.BestMatches("Polymaker", "PolyLite™ PLA Black", "PLA", 5, nil)
 	if got[0].Preset != "Polymaker PolyLite PLA" {
 		t.Fatalf("matches = %+v", got)
 	}
 
 	// No type, no generic: nothing to fall back to.
-	if got = c.BestMatches("Sunlu", "Mystery", "", 5); len(got) != 0 {
+	if got = c.BestMatches("Sunlu", "Mystery", "", 5, nil); len(got) != 0 {
 		t.Fatalf("matches = %+v", got)
 	}
 }
@@ -181,13 +181,13 @@ func TestBestMatchesOnlyTakesPresetsOfTheSpoolsBrand(t *testing.T) {
 
 	// "Filatech Wood-PLA" shares "wood" and "pla" with this spool, but it is
 	// another brand's: only the generic preset is offered.
-	got := c.BestMatches("Geeetech", "Wood PLA Poplar", "PLA", 20)
+	got := c.BestMatches("Geeetech", "Wood PLA Poplar", "PLA", 20, nil)
 	if len(got) != 1 || got[0].Preset != "Generic PLA" {
 		t.Fatalf("matches = %+v", got)
 	}
 
 	// With no brand named, the words alone decide.
-	got = c.BestMatches("", "Filatech Wood PLA", "PLA", 20)
+	got = c.BestMatches("", "Filatech Wood PLA", "PLA", 20, nil)
 	if len(got) != 2 || got[0].Preset != "Filatech Wood-PLA" {
 		t.Fatalf("matches = %+v", got)
 	}

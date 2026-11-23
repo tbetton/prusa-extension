@@ -129,6 +129,10 @@ export interface Status {
   refreshing: boolean;
   version?: string;
   presets: number;
+  /** The number of presets each source gave. */
+  sources?: Record<string, number>;
+  /** The sources the operator chose to offer. */
+  enabled?: string[];
   updated_at?: string;
   error?: string;
 }
@@ -137,13 +141,28 @@ export interface Candidate {
   preset: string;
   score?: number;
   variants: string[];
+  /** Where the preset comes from: prusa, polymaker or custom. */
+  source?: string;
+  /** The section written for the printer asked about. */
+  section?: string;
+  /** It does not fit that printer as written: its material settings are laid over a generic preset. */
+  adapted?: boolean;
+}
+
+/** One printer preset of PrusaSlicer. */
+export interface Printer {
+  name: string;
+  model?: string;
+  variant?: string;
+  extruders: number;
+  nozzle_diameter?: number;
+  high_flow: boolean;
 }
 
 export interface Request {
   name: string;
   vendor?: string;
   base: string;
-  variant?: string;
   color_rgba?: string;
   /** The filament position in PrusaSlicer, from 1. */
   slot?: number;
@@ -192,26 +211,42 @@ export const matchFilament = async (
   brand: string,
   name: string,
   type: string,
+  printer: string,
   signal?: AbortSignal,
 ): Promise<Candidate[]> => {
   const query = new URLSearchParams({ brand, name, type });
+  if (printer !== '') query.set('printer', printer);
 
   return (
     await json<{ matches: Candidate[] }>(BASE, 'GET', `/match?${query.toString()}`, undefined, signal)
   ).matches;
 };
 
-export const searchPresets = async (q: string, signal?: AbortSignal): Promise<Candidate[]> =>
+export const searchPresets = async (
+  q: string,
+  printer: string,
+  signal?: AbortSignal,
+): Promise<Candidate[]> => {
+  const query = new URLSearchParams({ q });
+  if (printer !== '') query.set('printer', printer);
+
+  return (
+    await json<{ presets: Candidate[] }>(BASE, 'GET', `/presets?${query.toString()}`, undefined, signal)
+  ).presets;
+};
+
+/** The printer presets of PrusaSlicer whose name holds the words of the query. */
+export const listPrinters = async (q: string, signal?: AbortSignal): Promise<Printer[]> =>
   (
-    await json<{ presets: Candidate[] }>(
+    await json<{ printers: Printer[] }>(
       BASE,
       'GET',
-      `/presets?${new URLSearchParams({ q }).toString()}`,
+      `/printers?${new URLSearchParams({ q }).toString()}`,
       undefined,
       signal,
     )
-  ).presets;
+  ).printers;
 
 /** The Config Bundle text for these filaments. */
-export const writeBundle = async (filaments: Request[]): Promise<string> =>
-  (await send(BASE, 'POST', '/bundle', { filaments })).text();
+export const writeBundle = async (printer: string, filaments: Request[]): Promise<string> =>
+  (await send(BASE, 'POST', '/bundle', { printer, filaments })).text();

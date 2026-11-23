@@ -4,7 +4,7 @@
 
 name: filament-profile
 kind: sink
-version: 0.4.0
+version: 0.5.0
 license: MIT
 title: Filament Profile
 summary: Write PrusaSlicer 2.9 filament profiles for the spools loaded on a printer.
@@ -25,8 +25,17 @@ require:
 # Every connection the process makes outside Prusa Connect.
 egress:
   - option: catalogue_url
-    why: Downloads the filament profiles Prusa Research publishes for PrusaSlicer 2.x.
+    why: Downloads the filament and printer profiles Prusa Research publishes for PrusaSlicer 2.x.
     sends: Only the request for the archive.
+  - option: polymaker_url
+    why: Downloads the filament presets Polymaker publishes for PrusaSlicer, when the polymaker source is enabled.
+    sends: Only the request for the archive.
+  - host: codeload.github.com
+    why: GitHub serves the Polymaker archive from there after a redirect.
+    sends: Only the request for the archive.
+  - option: custom_urls
+    why: Downloads the PrusaSlicer config bundles the operator names, when the custom source is enabled.
+    sends: Only the request for each bundle.
 
 options:
   - key: catalogue_url
@@ -37,9 +46,21 @@ options:
     type: int
     default: "7"
     summary: Days before the downloaded profiles are fetched again.
+  - key: sources
+    type: string
+    default: "prusa,polymaker"
+    summary: "The sources of filament presets to offer, separated by commas: prusa, polymaker, custom. The Prusa bundle is always loaded, for the printers and the generic presets; without prusa here, its own presets are not offered."
+  - key: polymaker_url
+    type: string
+    default: "https://github.com/Polymaker3D/Polymaker-Preset/archive/refs/heads/main.zip"
+    summary: The https address of the repository archive of Polymaker's presets, for the polymaker source.
+  - key: custom_urls
+    type: string
+    default: ""
+    summary: "For the custom source: https addresses of PrusaSlicer config bundles (.ini with [filament:...] sections), separated by commas, at most 8."
 
 needs:
-  memory_mib: 64
+  memory_mib: 128
   # The downloaded bundle is kept here.
   data: true
 

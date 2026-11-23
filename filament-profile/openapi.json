@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "filament-profile",
-    "version": "0.4.0",
+    "version": "0.5.0",
     "description": "PrusaSlicer 2.9 filament profiles for the spools on a printer. Every path is relative to the mount the host assigns."
   },
   "components": {
@@ -27,6 +27,20 @@
           },
           "error": {
             "type": "string"
+          },
+          "sources": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "The number of presets each source gave."
+          },
+          "enabled": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The sources the operator chose to offer."
           }
         },
         "required": [
@@ -49,6 +63,18 @@
             "items": {
               "type": "string"
             }
+          },
+          "source": {
+            "type": "string",
+            "description": "Where the preset comes from: prusa, polymaker or custom."
+          },
+          "section": {
+            "type": "string",
+            "description": "The section written for the printer asked about."
+          },
+          "adapted": {
+            "type": "boolean",
+            "description": "The preset does not fit that printer as written: its material settings are laid over a generic preset of the printer."
           }
         },
         "required": [
@@ -109,6 +135,35 @@
             "type": "number"
           }
         }
+      },
+      "Printer": {
+        "type": "object",
+        "description": "One printer preset of PrusaSlicer.",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "variant": {
+            "type": "string"
+          },
+          "extruders": {
+            "type": "integer"
+          },
+          "nozzle_diameter": {
+            "type": "number"
+          },
+          "high_flow": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "extruders",
+          "high_flow"
+        ]
       }
     }
   },
@@ -183,6 +238,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "printer",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "A printer preset name. Only presets that fit it are returned, as PrusaSlicer's own list shows them."
           }
         ],
         "responses": {
@@ -209,6 +273,9 @@
           },
           "503": {
             "description": "The profiles are not downloaded yet."
+          },
+          "404": {
+            "description": "The printer is not a preset of the Prusa profiles."
           }
         }
       }
@@ -225,6 +292,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "printer",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "A printer preset name. Only presets that fit it are returned, as PrusaSlicer's own list shows them."
           }
         ],
         "responses": {
@@ -251,6 +327,9 @@
           },
           "503": {
             "description": "The profiles are not downloaded yet."
+          },
+          "404": {
+            "description": "The printer is not a preset of the Prusa profiles."
           }
         },
         "description": "Searches the base presets by the words of the query, so a person can pick one when the match missed. The host authorizes the caller on this module before the route is called."
@@ -260,7 +339,7 @@
       "post": {
         "operationId": "write-bundle",
         "summary": "Write a PrusaSlicer 2.9 Config Bundle",
-        "description": "One [filament:NAME] section per request, flattened so it imports alone. A request with a slot is also selected in that filament position by a [presets] section.",
+        "description": "One [filament:NAME] section per request, flattened so it imports alone. With a printer, each profile is the section of its preset that fits that printer, and a [presets] section selects the printer and each filament in its slot.",
         "requestBody": {
           "required": true,
           "content": {
@@ -274,6 +353,10 @@
                     "items": {
                       "$ref": "#/components/schemas/Request"
                     }
+                  },
+                  "printer": {
+                    "type": "string",
+                    "description": "A printer preset name. Forced in the bundle's [presets] section, and the preset of each filament is the section that fits it."
                   }
                 },
                 "required": [
@@ -298,7 +381,50 @@
             "description": "The request is not valid."
           },
           "404": {
-            "description": "A preset or variant is not in the profiles."
+            "description": "A preset does not fit the printer, or the printer or a preset is not in the profiles."
+          },
+          "503": {
+            "description": "The profiles are not downloaded yet."
+          }
+        }
+      }
+    },
+    "/printers": {
+      "get": {
+        "operationId": "search-printers",
+        "summary": "Search the PrusaSlicer printer presets",
+        "description": "The printer presets of the Prusa profiles, by the words of the query, up to 60. The one a bundle forces is chosen from this list.",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The printers.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "printers": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Printer"
+                      }
+                    }
+                  },
+                  "required": [
+                    "printers"
+                  ]
+                }
+              }
+            }
           },
           "503": {
             "description": "The profiles are not downloaded yet."

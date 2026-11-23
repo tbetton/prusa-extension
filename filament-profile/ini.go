@@ -10,8 +10,10 @@ package main
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
+	"sync"
 )
 
 // Section is one [filament:NAME] of the bundle, keys in file order.
@@ -19,6 +21,12 @@ type Section struct {
 	Name string
 	Keys []string
 	Vals map[string]string
+	// Source says where the section comes from: "prusa" for the bundle Prusa
+	// Research publishes, or the id of another source.
+	Source string
+	// Brand is the maker the source gives to all its presets, such as
+	// "polymaker", for a source whose preset names do not start with it.
+	Brand string
 }
 
 // Catalogue is the filament sections of one vendor bundle.
@@ -27,12 +35,33 @@ type Catalogue struct {
 	Version  string
 	sections map[string]*Section
 	order    []string
+
+	// The printer presets, which say what a filament is compatible with.
+	printers     map[string]*Section
+	printerOrder []string
+	// byBase lists, for each base preset, itself and its printer variants.
+	byBase map[string][]string
+
+	// enabled limits the presets offered to these sources. Nil offers all.
+	enabled map[string]bool
+	// retarget names, for a source, the printers (by model) its presets may be
+	// adapted to when none fits as written.
+	retarget map[string]*regexp.Regexp
+
+	// cache keeps, for a few printers, the filament sections that fit them.
+	mu    sync.Mutex
+	cache map[string]map[string]bool
 }
 
 // ParseCatalogue reads a vendor bundle. It keeps the filament sections and the
 // vendor's config_version and ignores every other section.
 func ParseCatalogue(text string) *Catalogue {
-	c := &Catalogue{sections: map[string]*Section{}}
+	c := &Catalogue{
+		sections: map[string]*Section{},
+		printers: map[string]*Section{},
+		cache:    map[string]map[string]bool{},
+		retarget: map[string]*regexp.Regexp{},
+	}
 
 	var (
 		current *Section
@@ -56,6 +85,15 @@ func ParseCatalogue(text string) *Catalogue {
 
 				c.sections[name] = current
 			}
+
+			if name, ok := strings.CutPrefix(head, "printer:"); ok {
+				current = &Section{Name: name, Vals: map[string]string{}}
+				if _, dup := c.printers[name]; !dup {
+					c.printerOrder = append(c.printerOrder, name)
+				}
+
+				c.printers[name] = current
+			}
 		default:
 			key, value, ok := strings.Cut(line, "=")
 			if !ok {
@@ -77,7 +115,107 @@ func ParseCatalogue(text string) *Catalogue {
 		}
 	}
 
+	for _, section := range c.sections {
+		section.Source = "prusa"
+	}
+
+	c.reindex()
+
 	return c
+}
+
+// reindex rebuilds the list of sections of each base preset.
+func (c *Catalogue) reindex() {
+	c.byBase = map[string][]string{}
+
+	for _, name := range c.order {
+		if strings.HasPrefix(name, "*") {
+			continue
+		}
+
+		base, _, _ := strings.Cut(name, " @")
+		c.byBase[base] = append(c.byBase[base], name)
+	}
+}
+
+// AddSource merges the filament sections of another bundle into the
+// catalogue, under a source id. A section whose name the catalogue already
+// holds is left alone: the first source to name a preset keeps it. brand is the
+// maker the source gives to all its presets, and retarget, when it is not nil,
+// says by printer model which printers they may be adapted to. It returns the
+// number of presets added.
+func (c *Catalogue) AddSource(id, brand string, retarget *regexp.Regexp, bundle string) int {
+	other := ParseCatalogue(bundle)
+	added := 0
+
+	for _, name := range other.order {
+		if _, dup := c.sections[name]; dup {
+			continue
+		}
+
+		section := other.sections[name]
+		section.Source, section.Brand = id, brand
+		c.sections[name] = section
+		c.order = append(c.order, name)
+
+		if !strings.HasPrefix(name, "*") {
+			added++
+		}
+	}
+
+	if retarget != nil {
+		c.retarget[id] = retarget
+	}
+
+	c.mu.Lock()
+	c.cache = map[string]map[string]bool{}
+	c.mu.Unlock()
+	c.reindex()
+
+	return added
+}
+
+// SetSources limits the presets offered to these sources. The bundle of Prusa
+// Research stays loaded whatever is chosen: it holds the printers and the
+// generic presets the others are adapted on.
+func (c *Catalogue) SetSources(ids []string) {
+	c.enabled = map[string]bool{}
+	for _, id := range ids {
+		c.enabled[id] = true
+	}
+}
+
+// visible reports whether a source is one the operator chose to offer.
+func (c *Catalogue) visible(name string) bool {
+	if c.enabled == nil {
+		return true
+	}
+
+	section, ok := c.sections[name]
+
+	return ok && c.enabled[section.Source]
+}
+
+// SourceOf names the source of a filament section.
+func (c *Catalogue) SourceOf(name string) string {
+	if section, ok := c.sections[name]; ok {
+		return section.Source
+	}
+
+	return ""
+}
+
+// Counts returns, for each source, the number of presets it gave.
+func (c *Catalogue) Counts() map[string]int {
+	out := map[string]int{}
+
+	for _, name := range c.order {
+		if !strings.HasPrefix(name, "*") {
+			out[c.sections[name].Source]++
+		}
+	}
+
+	return out
 }
 
 // Len is the number of filament sections, abstract ones included.
@@ -96,12 +234,61 @@ func (c *Catalogue) Presets() []string {
 	out := make([]string, 0, len(c.order))
 
 	for _, name := range c.order {
-		if !strings.HasPrefix(name, "*") {
+		if !strings.HasPrefix(name, "*") && c.visible(name) {
 			out = append(out, name)
 		}
 	}
 
 	return out
+}
+
+// Bases lists the base presets a person may pick, in file order: the name of
+// each visible preset without its printer variant. A preset a source publishes
+// only for printers has no section of its own: "Panchroma PLA @Prusa Core One"
+// gives the base "Panchroma PLA".
+func (c *Catalogue) Bases() []string {
+	seen := map[string]bool{}
+	out := []string{}
+
+	for _, name := range c.Presets() {
+		base, _, _ := strings.Cut(name, " @")
+		if !seen[base] {
+			seen[base] = true
+			out = append(out, base)
+		}
+	}
+
+	return out
+}
+
+// brandOf is the maker a source gives to a base preset, in the words of
+// normalise, or "" when the source gives none.
+func (c *Catalogue) brandOf(base string) string {
+	if names := c.byBase[base]; len(names) > 0 {
+		return c.sections[names[0]].Brand
+	}
+
+	return ""
+}
+
+// hasBase reports whether a visible base preset has this name.
+func (c *Catalogue) hasBase(base string) bool {
+	for _, name := range c.byBase[base] {
+		if c.visible(name) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// BaseSource names the source of a base preset.
+func (c *Catalogue) BaseSource(base string) string {
+	if names := c.byBase[base]; len(names) > 0 {
+		return c.sections[names[0]].Source
+	}
+
+	return ""
 }
 
 // Variants maps each base preset to the suffixes of its printer variants: for
@@ -110,19 +297,12 @@ func (c *Catalogue) Presets() []string {
 func (c *Catalogue) Variants() map[string][]string {
 	out := map[string][]string{}
 
-	for _, name := range c.Presets() {
-		if !strings.Contains(name, " @") {
-			out[name] = nil
-		}
+	for _, base := range c.Bases() {
+		out[base] = nil
 	}
 
 	for _, name := range c.Presets() {
-		base, suffix, ok := strings.Cut(name, " @")
-		if !ok {
-			continue
-		}
-
-		if _, known := out[base]; known {
+		if base, suffix, ok := strings.Cut(name, " @"); ok {
 			out[base] = append(out[base], suffix)
 		}
 	}
@@ -146,19 +326,19 @@ var errNoPreset = errors.New("no such filament preset")
 func (c *Catalogue) Flatten(name string) (keys []string, vals map[string]string, err error) {
 	vals = map[string]string{}
 
-	if err = c.fold(name, 0, &keys, vals); err != nil {
+	if err = c.fold(c.sections, name, 0, &keys, vals); err != nil {
 		return nil, nil, err
 	}
 
 	return keys, vals, nil
 }
 
-func (c *Catalogue) fold(name string, depth int, keys *[]string, vals map[string]string) error {
+func (c *Catalogue) fold(sections map[string]*Section, name string, depth int, keys *[]string, vals map[string]string) error {
 	if depth > maxDepth {
 		return fmt.Errorf("%q inherits too deeply", name)
 	}
 
-	section, ok := c.sections[name]
+	section, ok := sections[name]
 	if !ok {
 		return fmt.Errorf("%w: %q", errNoPreset, name)
 	}
@@ -168,7 +348,7 @@ func (c *Catalogue) fold(name string, depth int, keys *[]string, vals map[string
 			continue
 		}
 
-		if err := c.fold(parent, depth+1, keys, vals); err != nil {
+		if err := c.fold(sections, parent, depth+1, keys, vals); err != nil {
 			return err
 		}
 	}
@@ -220,7 +400,7 @@ type Match struct {
 // match. The generic preset of the type always closes the list when
 // it exists, so a person can build a profile for a brand the bundle does not
 // know. At most limit entries come back.
-func (c *Catalogue) BestMatches(brand, name, kind string, limit int) []Match {
+func (c *Catalogue) BestMatches(brand, name, kind string, limit int, fit func(preset string) bool) []Match {
 	have := map[string]bool{}
 	for _, w := range normalise(brand + " " + name) {
 		have[w] = true
@@ -233,8 +413,8 @@ func (c *Catalogue) BestMatches(brand, name, kind string, limit int) []Match {
 
 	var out []Match
 
-	for _, preset := range c.Presets() {
-		if strings.Contains(preset, " @") || strings.HasPrefix(preset, "Generic ") {
+	for _, preset := range c.Bases() {
+		if strings.HasPrefix(preset, "Generic ") {
 			continue
 		}
 
@@ -245,7 +425,7 @@ func (c *Catalogue) BestMatches(brand, name, kind string, limit int) []Match {
 
 		// A preset is a brand's: its first word names the brand, and it must be
 		// the spool's. "Filatech Wood-PLA" is not a Geeetech Wood PLA.
-		if len(brands) > 0 && !brands[words[0]] {
+		if len(brands) > 0 && !brands[words[0]] && !brands[c.brandOf(preset)] {
 			continue
 		}
 
@@ -259,6 +439,10 @@ func (c *Catalogue) BestMatches(brand, name, kind string, limit int) []Match {
 
 		// A preset must share more than the material word to be a match.
 		if hit < 2 || hit*2 < len(words) {
+			continue
+		}
+
+		if fit != nil && !fit(preset) {
 			continue
 		}
 
@@ -278,7 +462,7 @@ func (c *Catalogue) BestMatches(brand, name, kind string, limit int) []Match {
 	}
 
 	if kind = strings.TrimSpace(kind); kind != "" {
-		if generic := "Generic " + strings.ToUpper(kind); c.Has(generic) {
+		if generic := "Generic " + strings.ToUpper(kind); c.hasBase(generic) && (fit == nil || fit(generic)) {
 			out = append(out, Match{Preset: generic})
 		}
 	}

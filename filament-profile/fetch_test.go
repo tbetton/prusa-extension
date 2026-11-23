@@ -113,7 +113,7 @@ func TestSaveBundleReplacesTheFile(t *testing.T) {
 	dir := t.TempDir()
 
 	for _, text := range []string{"first", "second"} {
-		if err := saveBundle(dir, []byte(text)); err != nil {
+		if err := saveBundle(dir, bundleFile, []byte(text)); err != nil {
 			t.Fatal(err)
 		}
 	}
