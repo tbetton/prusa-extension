@@ -107,6 +107,8 @@ export interface Request {
   base: string;
   variant?: string;
   color_rgba?: string;
+  /** The filament position in PrusaSlicer, from 1. */
+  slot?: number;
 }
 
 export const getCatalogue = (signal?: AbortSignal): Promise<Status> =>

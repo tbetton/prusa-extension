@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "filament-profile",
-    "version": "0.1.1",
+    "version": "0.2.0",
     "description": "PrusaSlicer 2.9 filament profiles for the spools on a printer. Every path is relative to the mount the host assigns."
   },
   "components": {
@@ -73,6 +73,12 @@
           },
           "color_rgba": {
             "type": "string"
+          },
+          "slot": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 32,
+            "description": "The filament position in PrusaSlicer, from 1. The bundle's [presets] section selects the profile there on import. 0 or absent leaves the selection alone."
           }
         },
         "required": [
@@ -230,7 +236,7 @@
       "post": {
         "operationId": "write-bundle",
         "summary": "Write a PrusaSlicer 2.9 Config Bundle",
-        "description": "One [filament:NAME] section per request, flattened so it imports alone.",
+        "description": "One [filament:NAME] section per request, flattened so it imports alone. A request with a slot is also selected in that filament position by a [presets] section.",
         "requestBody": {
           "required": true,
           "content": {

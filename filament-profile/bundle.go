@@ -7,6 +7,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -23,6 +24,11 @@ type Request struct {
 	Variant string `json:"variant,omitempty"`
 	// ColorRGBA is the spool's colour as #rrggbb or #rrggbbaa. Empty keeps the base's.
 	ColorRGBA string `json:"color_rgba,omitempty"`
+	// Slot is the filament position the profile takes in PrusaSlicer, from 1:
+	// slot 1 is the first extruder's filament, slot 2 the second's. The
+	// bundle's [presets] section selects each profile in its slot when the
+	// bundle is imported. Zero leaves the selection alone.
+	Slot int `json:"slot,omitempty"`
 }
 
 // MaxRequests bounds one bundle: a printer has few tools.
@@ -31,6 +37,7 @@ const MaxRequests = 32
 var (
 	errNoRequest = errors.New("no filament to write")
 	errName      = errors.New("a profile needs a name")
+	errSlot      = errors.New("a slot is a number from 1 to the size of the bundle")
 )
 
 // dropped are keys of a parent that must not reach a user preset: an alias or
@@ -84,6 +91,7 @@ func (c *Catalogue) Bundle(requests []Request) (string, error) {
 	out.WriteString("# Import with File > Import > Import Config Bundle.\n")
 
 	used := map[string]bool{}
+	selected := map[int]string{}
 
 	for _, req := range requests {
 		name := presetName(req.Name)
@@ -102,6 +110,18 @@ func (c *Catalogue) Bundle(requests []Request) (string, error) {
 		}
 
 		used[name] = true
+
+		if req.Slot < 0 || req.Slot > MaxRequests {
+			return "", fmt.Errorf("%w: %d", errSlot, req.Slot)
+		}
+
+		if req.Slot > 0 {
+			if other, taken := selected[req.Slot]; taken {
+				return "", fmt.Errorf("%q and %q both take slot %d", other, name, req.Slot)
+			}
+
+			selected[req.Slot] = name
+		}
 
 		keys, vals, err := c.Flatten(source)
 		if err != nil {
@@ -135,6 +155,28 @@ func (c *Catalogue) Bundle(requests []Request) (string, error) {
 
 			// The catalogue's own values are single lines already.
 			fmt.Fprintf(&out, "%s = %s\n", key, vals[key])
+		}
+	}
+
+	if len(selected) > 0 {
+		slots := make([]int, 0, len(selected))
+		for slot := range selected {
+			slots = append(slots, slot)
+		}
+
+		sort.Ints(slots)
+
+		// PrusaSlicer keeps the filament of extruder 1 under `filament` and the
+		// next ones under `filament_1`, `filament_2`, and so on.
+		out.WriteString("\n[presets]\n")
+
+		for _, slot := range slots {
+			key := "filament"
+			if slot > 1 {
+				key = fmt.Sprintf("filament_%d", slot-1)
+			}
+
+			fmt.Fprintf(&out, "%s = %s\n", key, selected[slot])
 		}
 	}
 

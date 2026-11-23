@@ -25,7 +25,7 @@
     type Tool,
   } from './api';
   import { heldHost } from './host';
-  import { toolName } from './labels';
+  import { compareToolIds, toolName } from './labels';
   import { familiesOf, nozzleToken, pickVariant } from './variants';
 
   interface Props {
@@ -54,6 +54,8 @@
   let rows = $state<Row[]>([]);
   /** Every tool of the printer, loaded or not: one alone is the extruder. */
   let toolCount = $state(0);
+  /** The ids of every tool in the printer's order: a tool's place is its slot in PrusaSlicer. */
+  let order = $state<string[]>([]);
   let status = $state<Status | undefined>(undefined);
   let family = $state('');
   let loading = $state(true);
@@ -112,6 +114,8 @@
   const swatch = (color: string): string | undefined =>
     /^#[0-9a-f]{6}(?:[0-9a-f]{2})?$/iu.test(color) ? color : undefined;
 
+  const slotOf = (row: Row): number => order.indexOf(row.tool.id) + 1;
+
   const candidateOf = (row: Row): Candidate | undefined =>
     row.candidates.find((candidate) => candidate.preset === row.preset);
 
@@ -143,6 +147,7 @@
       ]);
       status = state;
       toolCount = tools.length;
+      order = tools.map((tool) => tool.id).sort(compareToolIds);
       rows = tools.flatMap((tool) => rowOf(tool) ?? []);
       if (state.ready) await matchAll();
     } catch (error) {
@@ -213,6 +218,7 @@
         .map((row) => {
           const request: Request = {
             name: row.profileName,
+            slot: slotOf(row),
             base: row.preset,
             variant: variantOf(row),
           };
@@ -234,6 +240,12 @@
       busy = false;
     }
   };
+
+  // PrusaSlicer reads the selection only when filament 1 is among the profiles.
+  const slotGap = $derived(
+    rows.some((row) => row.include && row.preset !== '') &&
+      !rows.some((row) => row.include && row.preset !== '' && slotOf(row) === 1),
+  );
 
   const chosen = $derived(rows.filter((row) => row.include && row.preset !== '').length);
 </script>
@@ -356,6 +368,9 @@
         {t('filament-profile.download', { count: String(chosen) })}
       </Button>
       <p class="mt-2 text-xs text-muted-foreground">{t('filament-profile.importHint')}</p>
+      {#if slotGap}
+        <p class="mt-1 text-xs text-destructive">{t('filament-profile.slotGap')}</p>
+      {/if}
     </div>
   {/if}
 </div>

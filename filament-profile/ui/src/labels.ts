@@ -16,3 +16,17 @@ export const toolName = (id: string, single: boolean): ToolName => {
 
   return single ? {} : { tool: Number(head) + 1 };
 };
+
+const parts = (id: string): number[] => id.split('.').map((part) => Number(part));
+
+/** Orders tool ids as the printer does: by tool, then by slot, numerically. */
+export const compareToolIds = (a: string, b: string): number => {
+  const left = parts(a);
+  const right = parts(b);
+  for (let i = 0; i < Math.max(left.length, right.length); i += 1) {
+    const diff = (left[i] ?? -1) - (right[i] ?? -1);
+    if (diff !== 0) return diff;
+  }
+
+  return 0;
+};

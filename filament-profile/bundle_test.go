@@ -85,3 +85,52 @@ func TestPresetNameIsAFileName(t *testing.T) {
 		t.Fatalf("presetName = %q", got)
 	}
 }
+
+func TestBundleSelectsTheProfilesInTheirSlots(t *testing.T) {
+	c := ParseCatalogue(fixture)
+
+	text, err := c.Bundle([]Request{
+		{Name: "Third", Base: "Generic PLA", Slot: 3},
+		{Name: "First", Base: "Generic PLA", Variant: "COREONEINDX HF0.4", Slot: 1},
+		{Name: "Loose", Base: "Generic PETG"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := "\n[presets]\nfilament = First @COREONEINDX HF0.4\nfilament_2 = Third\n"
+	if !strings.HasSuffix(text, want) {
+		t.Fatalf("the bundle does not end with %q:\n%s", want, text)
+	}
+
+	if strings.Contains(text, "Loose\n") && strings.Contains(strings.SplitN(text, "[presets]", 2)[1], "Loose") {
+		t.Fatalf("a profile with no slot was selected:\n%s", text)
+	}
+}
+
+func TestBundleWritesNoPresetsWithoutSlots(t *testing.T) {
+	text, err := ParseCatalogue(fixture).Bundle([]Request{{Name: "Mine", Base: "Generic PLA"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.Contains(text, "[presets]") {
+		t.Fatalf("a [presets] section was written:\n%s", text)
+	}
+}
+
+func TestBundleRefusesABadSlot(t *testing.T) {
+	c := ParseCatalogue(fixture)
+
+	cases := map[string][]Request{
+		"negative":  {{Name: "A", Base: "Generic PLA", Slot: -1}},
+		"too large": {{Name: "A", Base: "Generic PLA", Slot: MaxRequests + 1}},
+		"taken":     {{Name: "A", Base: "Generic PLA", Slot: 2}, {Name: "B", Base: "Generic PETG", Slot: 2}},
+	}
+
+	for label, requests := range cases {
+		if _, err := c.Bundle(requests); err == nil {
+			t.Errorf("%s: no error", label)
+		}
+	}
+}
