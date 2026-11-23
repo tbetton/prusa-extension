@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "filament-profile",
-    "version": "0.2.1",
+    "version": "0.3.0",
     "description": "PrusaSlicer 2.9 filament profiles for the spools on a printer. Every path is relative to the mount the host assigns."
   },
   "components": {
@@ -79,12 +79,36 @@
             "minimum": 0,
             "maximum": 32,
             "description": "The filament position in PrusaSlicer, from 1. The bundle's [presets] section selects the profile there on import. 0 or absent leaves the selection alone."
+          },
+          "properties": {
+            "$ref": "#/components/schemas/Properties"
           }
         },
         "required": [
           "name",
           "base"
         ]
+      },
+      "Properties": {
+        "type": "object",
+        "description": "What the OpenPrintTag catalogue says of the spool's material. A zero or absent value is unknown.",
+        "properties": {
+          "min_print_temp": {
+            "type": "integer"
+          },
+          "max_print_temp": {
+            "type": "integer"
+          },
+          "min_bed_temp": {
+            "type": "integer"
+          },
+          "max_bed_temp": {
+            "type": "integer"
+          },
+          "density": {
+            "type": "number"
+          }
+        }
       }
     }
   },

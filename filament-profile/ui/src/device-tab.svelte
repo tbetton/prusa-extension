@@ -13,6 +13,7 @@
 
   import {
     getCatalogue,
+    getMaterial,
     listTools,
     matchFilament,
     ProfileError,
@@ -20,6 +21,7 @@
     searchPresets,
     writeBundle,
     type Candidate,
+    type Properties,
     type Request,
     type Status,
     type Tool,
@@ -49,6 +51,10 @@
     candidates: Candidate[];
     preset: string;
     query: string;
+    /** What the catalogue says of the material, when it says anything useful. */
+    properties: Properties | undefined;
+    /** Undefined follows the preset: the brand's temperatures replace a generic preset's. */
+    useProperties: boolean | undefined;
   }
 
   let rows = $state<Row[]>([]);
@@ -100,6 +106,8 @@
       candidates: [],
       preset: '',
       query: '',
+      properties: undefined,
+      useProperties: undefined,
     };
   };
 
@@ -115,6 +123,23 @@
     /^#[0-9a-f]{6}(?:[0-9a-f]{2})?$/iu.test(color) ? color : undefined;
 
   const slotOf = (row: Row): number => order.indexOf(row.tool.id) + 1;
+
+  const hasTemperatures = (p: Properties | undefined): boolean =>
+    p !== undefined &&
+    ((p.min_print_temp ?? 0) > 0 || (p.min_bed_temp ?? 0) > 0 || (p.density ?? 0) > 0);
+
+  /** Whether the profile takes the catalogue's temperatures: a generic preset does, a brand's own does not. */
+  const useOf = (row: Row): boolean =>
+    hasTemperatures(row.properties) && (row.useProperties ?? row.preset.startsWith('Generic '));
+
+  const summaryOf = (p: Properties): string =>
+    [
+      (p.min_print_temp ?? 0) > 0 ? `${String(p.min_print_temp)}–${String(p.max_print_temp)} °C` : '',
+      (p.min_bed_temp ?? 0) > 0 ? `${t('filament-profile.bed')} ${String(p.min_bed_temp)}–${String(p.max_bed_temp)} °C` : '',
+      (p.density ?? 0) > 0 ? `${String(p.density)} g/cm³` : '',
+    ]
+      .filter((part) => part !== '')
+      .join(' · ');
 
   const candidateOf = (row: Row): Candidate | undefined =>
     row.candidates.find((candidate) => candidate.preset === row.preset);
@@ -158,6 +183,21 @@
     );
   };
 
+  const loadProperties = async (): Promise<void> => {
+    await Promise.all(
+      rows.map(async (row) => {
+        const uuid = row.tool.assignment?.material_uuid ?? '';
+        if (uuid === '') return;
+        try {
+          const found = await getMaterial(uuid, host.signal);
+          if (hasTemperatures(found)) row.properties = found;
+        } catch {
+          // A material the catalogue does not know keeps the preset's values.
+        }
+      }),
+    );
+  };
+
   const load = async (): Promise<void> => {
     loading = true;
     problem = undefined;
@@ -170,6 +210,7 @@
       toolCount = tools.length;
       order = tools.map((tool) => tool.id).sort(compareToolIds);
       rows = tools.flatMap((tool) => rowOf(tool) ?? []);
+      void loadProperties();
       if (state.ready) await matchAll();
     } catch (error) {
       problem = message(error);
@@ -245,6 +286,7 @@
           };
           if (row.brand !== '') request.vendor = row.brand;
           if (row.color !== '') request.color_rgba = row.color;
+          if (useOf(row) && row.properties) request.properties = row.properties;
           return request;
         });
       const text = await writeBundle(filaments);
@@ -374,6 +416,16 @@
             </form>
             {#if row.candidates.length > 0 && usable(row).length === 0}
               <p class="text-xs text-destructive">{t('filament-profile.noFit')}</p>
+            {/if}
+            {#if row.properties}
+              <label class="flex items-center gap-2 text-xs text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={useOf(row)}
+                  onchange={(event) => (row.useProperties = event.currentTarget.checked)}
+                />
+                {t('filament-profile.useCatalogue')} ({summaryOf(row.properties)})
+              </label>
             {/if}
             {#if row.preset !== ''}
               <p class="text-xs text-muted-foreground">

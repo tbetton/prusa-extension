@@ -66,6 +66,7 @@ export interface Tool {
   id: string;
   active: boolean;
   assignment: {
+    material_uuid: string;
     brand_name: string;
     material_name: string;
     type: string;
@@ -109,7 +110,40 @@ export interface Request {
   color_rgba?: string;
   /** The filament position in PrusaSlicer, from 1. */
   slot?: number;
+  /** The maker's advised temperatures and the density. */
+  properties?: Properties;
 }
+
+/** What the OpenPrintTag catalogue says of one material. Absent or 0 is unknown. */
+export interface Properties {
+  min_print_temp?: number;
+  max_print_temp?: number;
+  min_bed_temp?: number;
+  max_bed_temp?: number;
+  density?: number;
+}
+
+/** The catalogue's properties of one material, as the Materials extension serves them. */
+export const getMaterial = async (uuid: string, signal?: AbortSignal): Promise<Properties> => {
+  const detail = await json<{ material?: Properties; custom?: Properties }>(
+    MATERIALS,
+    'GET',
+    `/materials/${encodeURIComponent(uuid)}`,
+    undefined,
+    signal,
+  );
+
+  const found = detail.material ?? detail.custom ?? {};
+  const keep: Properties = {};
+  // Only what the profile uses is sent on, not the whole material.
+  if (found.min_print_temp) keep.min_print_temp = found.min_print_temp;
+  if (found.max_print_temp) keep.max_print_temp = found.max_print_temp;
+  if (found.min_bed_temp) keep.min_bed_temp = found.min_bed_temp;
+  if (found.max_bed_temp) keep.max_bed_temp = found.max_bed_temp;
+  if (found.density) keep.density = found.density;
+
+  return keep;
+};
 
 export const getCatalogue = (signal?: AbortSignal): Promise<Status> =>
   json<Status>(BASE, 'GET', '/catalogue', undefined, signal);

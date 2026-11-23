@@ -134,3 +134,72 @@ func TestBundleRefusesABadSlot(t *testing.T) {
 		}
 	}
 }
+
+const propertiesFixture = `[vendor]
+config_version = 2.5.16
+
+[filament:Base]
+temperature = 215
+first_layer_temperature = 220
+bed_temperature = 60
+first_layer_bed_temperature = 65
+filament_density = 1.24
+`
+
+func write(t *testing.T, p *Properties) string {
+	t.Helper()
+
+	text, err := ParseCatalogue(propertiesFixture).Bundle([]Request{{Name: "Mine", Base: "Base", Properties: p}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return text
+}
+
+func TestPropertiesReplaceTemperaturesAndKeepTheMargin(t *testing.T) {
+	text := write(t, &Properties{MinPrintTemp: 190, MaxPrintTemp: 230, MinBedTemp: 55, MaxBedTemp: 65, Density: 1.31})
+
+	for _, want := range []string{
+		"temperature = 210\n", "first_layer_temperature = 215\n",
+		"bed_temperature = 60\n", "first_layer_bed_temperature = 65\n",
+		"filament_density = 1.31\n", "temperatures and density from the OpenPrintTag catalogue",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("bundle misses %q:\n%s", want, text)
+		}
+	}
+}
+
+func TestPropertiesStayInsideTheRange(t *testing.T) {
+	// 212 rounds to 210, below the lowest the maker advises: it is kept at 212.
+	text := write(t, &Properties{MinPrintTemp: 212, MaxPrintTemp: 212})
+	if !strings.Contains(text, "\ntemperature = 212\n") || !strings.Contains(text, "first_layer_temperature = 217\n") {
+		t.Fatalf("a range of one value was not kept:\n%s", text)
+	}
+}
+
+func TestPropertiesOutOfRangeAreIgnored(t *testing.T) {
+	for label, p := range map[string]*Properties{
+		"nil":          nil,
+		"inverted":     {MinPrintTemp: 230, MaxPrintTemp: 190},
+		"too hot":      {MinPrintTemp: 200, MaxPrintTemp: 900},
+		"too cold":     {MinPrintTemp: 20, MaxPrintTemp: 40},
+		"bed too hot":  {MinBedTemp: 60, MaxBedTemp: 400},
+		"no density":   {Density: 0},
+		"bad density":  {Density: 90},
+		"only a floor": {MinPrintTemp: 200},
+	} {
+		text := write(t, p)
+
+		for _, keep := range []string{"temperature = 215\n", "bed_temperature = 60\n", "filament_density = 1.24\n"} {
+			if !strings.Contains(text, keep) {
+				t.Errorf("%s: %q changed:\n%s", label, keep, text)
+			}
+		}
+
+		if strings.Contains(text, "OpenPrintTag") {
+			t.Errorf("%s: the note claims a change", label)
+		}
+	}
+}

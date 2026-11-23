@@ -29,6 +29,9 @@ type Request struct {
 	// bundle's [presets] section selects each profile in its slot when the
 	// bundle is imported. Zero leaves the selection alone.
 	Slot int `json:"slot,omitempty"`
+	// Properties are the maker's advised temperatures and the density, from
+	// the OpenPrintTag catalogue. They replace the base's own. Absent keeps them.
+	Properties *Properties `json:"properties,omitempty"`
 }
 
 // MaxRequests bounds one bundle: a printer has few tools.
@@ -144,7 +147,13 @@ func (c *Catalogue) Bundle(requests []Request) (string, error) {
 			set("filament_colour", hex)
 		}
 
-		set("filament_notes", `"Written by filament-profile from `+strings.ReplaceAll(presetName(source), `"`, "")+` (Prusa Research bundle `+c.Version+`)"`)
+		note := "Written by filament-profile from " + strings.ReplaceAll(presetName(source), `"`, "") +
+			" (Prusa Research bundle " + c.Version + ")"
+		if req.Properties.apply(vals, set) {
+			note += "; temperatures and density from the OpenPrintTag catalogue"
+		}
+
+		set("filament_notes", `"`+note+`"`)
 
 		fmt.Fprintf(&out, "\n[filament:%s]\n", name)
 
