@@ -4,7 +4,7 @@
 
 name: filament-profile
 kind: sink
-version: 0.1.0
+version: 0.1.1
 license: MIT
 title: Filament Profile
 summary: Write PrusaSlicer 2.9 filament profiles for the spools loaded on a printer.

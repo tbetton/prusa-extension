@@ -25,6 +25,7 @@
     type Tool,
   } from './api';
   import { heldHost } from './host';
+  import { toolName } from './labels';
   import { familiesOf, nozzleToken, pickVariant } from './variants';
 
   interface Props {
@@ -51,6 +52,8 @@
   }
 
   let rows = $state<Row[]>([]);
+  /** Every tool of the printer, loaded or not: one alone is the extruder. */
+  let toolCount = $state(0);
   let status = $state<Status | undefined>(undefined);
   let family = $state('');
   let loading = $state(true);
@@ -98,6 +101,14 @@
     };
   };
 
+  const labelOf = (row: Row): string => {
+    const name = toolName(row.tool.id, toolCount === 1);
+    if (name.tool === undefined) return t('filament-profile.extruder');
+    if (name.slot === undefined) return t('filament-profile.tool', { n: String(name.tool) });
+
+    return t('filament-profile.toolSlot', { n: String(name.tool), slot: String(name.slot) });
+  };
+
   const swatch = (color: string): string | undefined =>
     /^#[0-9a-f]{6}(?:[0-9a-f]{2})?$/iu.test(color) ? color : undefined;
 
@@ -131,6 +142,7 @@
         getCatalogue(host.signal),
       ]);
       status = state;
+      toolCount = tools.length;
       rows = tools.flatMap((tool) => rowOf(tool) ?? []);
       if (state.ready) await matchAll();
     } catch (error) {
@@ -277,7 +289,7 @@
               <CardTitle>
                 <label class="flex items-center gap-2">
                   <input type="checkbox" bind:checked={row.include} />
-                  {t('filament-profile.tool', { id: row.tool.id })}
+                  {labelOf(row)}
                 </label>
               </CardTitle>
               <div class="flex items-center gap-2">

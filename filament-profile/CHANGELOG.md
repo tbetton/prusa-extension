@@ -7,6 +7,10 @@ Write the entry in the same change as the code. One bullet per behaviour a
 person outside this repository can observe: a route, a setting, a screen, a
 refusal. Name the route and the setting key, never a function or a file.
 
+## 0.1.1
+
+- Number the tools from 1 on the **Filament Profile** tab, as the Materials extension and the printer's Tools tab do. A printer with a single tool shows **Extruder**, and a slot of an MMU shows **Tool n · Sm**.
+
 ## 0.1.0
 
 - Add a **Filament Profile** tab to a printer's page. It lists the filament on each tool, read from the Materials extension, and proposes the nearest Prusa preset for each.
