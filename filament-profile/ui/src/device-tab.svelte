@@ -51,6 +51,8 @@
     candidates: Candidate[];
     preset: string;
     query: string;
+    /** What the last search found, and how much of it fits the printer. */
+    searchNote: string;
     /** What the catalogue says of the material, when it says anything useful. */
     properties: Properties | undefined;
     /** Undefined follows the preset: the brand's temperatures replace a generic preset's. */
@@ -106,6 +108,7 @@
       candidates: [],
       preset: '',
       query: '',
+      searchNote: '',
       properties: undefined,
       useProperties: undefined,
     };
@@ -251,12 +254,24 @@
   };
 
   const search = async (row: Row): Promise<void> => {
+    const query = row.query.trim();
     try {
-      const found = await searchPresets(row.query, host.signal);
-      if (found.length > 0) {
-        row.candidates = found;
-        row.preset = found[0]?.preset ?? '';
-      }
+      const found = await searchPresets(query, host.signal);
+      const fits = (candidate: Candidate): boolean =>
+        family === '' || pickVariant(candidate.variants, family, row.tool.nozzle) !== '';
+      const fitting = found.filter(fits);
+
+      // The presets already offered stay: a search adds to the list, it does not replace it.
+      const seen = new Set(found.map((candidate) => candidate.preset));
+      row.candidates = [...found, ...row.candidates.filter((candidate) => !seen.has(candidate.preset))];
+      if (fitting[0]) row.preset = fitting[0].preset;
+
+      row.searchNote =
+        found.length === 0
+          ? t('filament-profile.noResults', { query })
+          : fitting.length === 0
+            ? t('filament-profile.noneFit', { count: String(found.length) })
+            : t('filament-profile.someFit', { fit: String(fitting.length), count: String(found.length) });
     } catch (error) {
       problem = message(error);
     }
@@ -414,6 +429,9 @@
                 {t('filament-profile.searchButton')}
               </Button>
             </form>
+            {#if row.searchNote !== ''}
+              <p class="text-xs text-muted-foreground" role="status">{row.searchNote}</p>
+            {/if}
             {#if row.candidates.length > 0 && usable(row).length === 0}
               <p class="text-xs text-destructive">{t('filament-profile.noFit')}</p>
             {/if}

@@ -7,6 +7,10 @@ Write the entry in the same change as the code. One bullet per behaviour a
 person outside this repository can observe: a route, a setting, a screen, a
 refusal. Name the route and the setting key, never a function or a file.
 
+## 0.3.1
+
+- Say what a preset search found on the **Filament Profile** tab: how many presets matched, and how many fit the printer and the nozzle. A search used to hide every preset that has no variant for the printer, without a word, and replace the list already offered. It now adds to that list.
+
 ## 0.3.0
 
 - Read each spool's material from the Materials extension (`GET /materials/{uuid}`) and, when the OpenPrintTag catalogue gives them, use its nozzle and bed temperatures and its density in the profile. The nozzle temperature is the middle of the maker's range, rounded to 5 °C, and the first layer keeps the margin of the preset. A **Use the maker's temperatures** box on each tool turns it off. It is on by default for a generic preset, and off for a Prusa preset of the brand, which is already tuned.
