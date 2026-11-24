@@ -7,9 +7,12 @@ Write the entry in the same change as the code. One bullet per behaviour a
 person outside this repository can observe: a route, a setting, a screen, a
 refusal. Name the route and the setting key, never a function or a file.
 
-## 0.1.1
+## 0.1.2
 
 - Rework the **Filament Profile** tab. The printer search now only chooses the printer the `.ini` is written for. Each tool is one line (number, material type, colour, nozzle); a click opens its profile below. The list shows every profile, with a search field, whatever the printer. Beside it are the settings written to the `.ini` (temperatures, density, fan, retraction…), and each can be edited (`POST /settings`, `overrides` on `POST /bundle`). A profile that fits no section of the chosen printer is still written, laid over its generic preset.
+
+## 0.1.1
+
 - Choose the PrusaSlicer printer on the **Filament Profile** tab, from the printer presets of the Prusa profiles (`GET /printers`). The tab offers only the filament presets PrusaSlicer itself lists for that printer: each preset's compatibility condition is evaluated against the printer, so a preset made for another printer is no longer offered and no longer flagged red. `GET /match` and `GET /presets` take a `printer`, and `POST /bundle` takes a `printer` instead of a variant per filament.
 - Force that printer in the exported config: the bundle's `[presets]` section now selects the printer, then each profile in the filament of its tool.
 - Add sources of filament presets, chosen with the new `sources` setting (default `prusa,polymaker`): `prusa`, `polymaker` and `custom`. The Prusa bundle is always loaded, for its printers and generic presets. Polymaker's own presets (`Polymaker3D/Polymaker-Preset`, MIT) are read from `polymaker_url`; they are made for the CORE One, and on a printer of that family that does not list them, their temperatures, fans and retraction are laid over the printer's generic preset, with a flow no higher than that preset's. `custom_urls` adds PrusaSlicer config bundles of your own (https, at most 8).
