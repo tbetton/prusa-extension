@@ -393,6 +393,22 @@ type Match struct {
 	Score  float64 `json:"score"`
 }
 
+// typeOf is the material type of a base preset, such as "PLA", or "" when its
+// settings do not say.
+func (c *Catalogue) typeOf(base string) string {
+	section := c.anySection(base)
+	if section == "" {
+		return ""
+	}
+
+	_, vals, err := c.Flatten(section)
+	if err != nil {
+		return ""
+	}
+
+	return strings.ToUpper(strings.TrimSpace(vals["filament_type"]))
+}
+
 // BestMatches ranks the base presets against a spool's brand, name and type.
 // A preset scores the share of its own words found in "brand name"; the brand
 // is worth a word of its own, so "Prusament PLA" beats "Generic PLA" for a
@@ -444,6 +460,13 @@ func (c *Catalogue) BestMatches(brand, name, kind string, limit int, fit func(pr
 
 		if fit != nil && !fit(preset) {
 			continue
+		}
+
+		// A PETG preset is not a match for a PLA spool.
+		if want := strings.ToUpper(strings.TrimSpace(kind)); want != "" {
+			if have := c.typeOf(preset); have != "" && have != want {
+				continue
+			}
 		}
 
 		out = append(out, Match{Preset: preset, Score: float64(hit) / float64(len(words))})

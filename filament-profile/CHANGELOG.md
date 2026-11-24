@@ -7,6 +7,10 @@ Write the entry in the same change as the code. One bullet per behaviour a
 person outside this repository can observe: a route, a setting, a screen, a
 refusal. Name the route and the setting key, never a function or a file.
 
+## 0.1.4
+
+- List only the profiles of the spool's brand and material type, and the generic profile of that type when there is none. `GET /match` no longer returns a preset of another material type.
+
 ## 0.1.3
 
 - Search the printer as you type on the **Filament Profile** tab: the printer presets that match appear under the field, and one click chooses it.
