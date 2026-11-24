@@ -31,7 +31,7 @@ import (
 
 const (
 	name    = "filament-profile"
-	release = extension.Version("0.1.7")
+	release = extension.Version("0.1.8")
 )
 
 // Settings is what an operator writes under this instance's config block. The
@@ -487,7 +487,7 @@ func (m *module) routes() http.Handler {
 		_, _ = w.Write(raw)
 	})
 
-	mux.HandleFunc("PUT /state/{device}", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /state/{device}", func(w http.ResponseWriter, r *http.Request) {
 		path, ok := m.statePath(w, r)
 		if !ok {
 			return
@@ -512,11 +512,17 @@ func (m *module) routes() http.Handler {
 		}
 
 		tmp := path + ".tmp"
-		if err := os.WriteFile(tmp, raw, 0o600); err == nil {
-			err = os.Rename(tmp, path)
-			if err != nil {
-				_ = os.Remove(tmp)
-			}
+		if err := os.WriteFile(tmp, raw, 0o600); err != nil {
+			refuse(w, r, BadRequest.New("the state cannot be kept: "+err.Error()))
+
+			return
+		}
+
+		if err := os.Rename(tmp, path); err != nil {
+			_ = os.Remove(tmp)
+			refuse(w, r, BadRequest.New("the state cannot be kept: "+err.Error()))
+
+			return
 		}
 
 		w.WriteHeader(http.StatusNoContent)

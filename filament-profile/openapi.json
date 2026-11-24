@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "filament-profile",
-    "version": "0.1.7",
+    "version": "0.1.8",
     "description": "PrusaSlicer 2.9 filament profiles for the spools on a printer. Every path is relative to the mount the host assigns."
   },
   "components": {
@@ -554,10 +554,10 @@
             }
           }
         },
-        "description": "What a person chose on the device's tab, as the last PUT kept it. The host authorizes the caller on this module before the route is called."
+        "description": "What a person chose on the device's tab, as the last POST kept it. The host authorizes the caller on this module before the route is called."
       },
-      "put": {
-        "operationId": "put-state",
+      "post": {
+        "operationId": "keep-state",
         "summary": "Keep the choices made for a device",
         "description": "The printer, and for each tool its profile, name and edited settings. A page reads them back when it opens.",
         "parameters": [

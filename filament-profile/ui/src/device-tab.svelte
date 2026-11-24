@@ -305,7 +305,7 @@
       ),
     };
     const body = JSON.stringify(state);
-    const timer = setTimeout(() => void putState(deviceId, JSON.parse(body) as SavedState).catch(() => undefined), 300);
+    const timer = setTimeout(() => void putState(deviceId, JSON.parse(body) as SavedState).catch((error: unknown) => (problem = message(error))), 300);
 
     return () => clearTimeout(timer);
   });
@@ -379,7 +379,11 @@
       toolCount = tools.length;
       order = tools.map((tool) => tool.id).sort(compareToolIds);
       rows = tools.flatMap((tool) => rowOf(tool) ?? []);
-      saved = await getState(deviceId, host.signal).catch((): SavedState => ({}));
+      saved = await getState(deviceId, host.signal).catch((error: unknown): SavedState => {
+        problem = message(error);
+
+        return {};
+      });
       for (const row of rows) {
         const kept = saved.tools?.[row.tool.id];
         if (kept?.spool !== spoolKey(row)) continue;

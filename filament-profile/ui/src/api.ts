@@ -318,5 +318,5 @@ export const getState = (deviceId: string, signal?: AbortSignal): Promise<SavedS
   json<SavedState>(BASE, 'GET', `/state/${encodeURIComponent(deviceId)}`, undefined, signal);
 
 export const putState = async (deviceId: string, state: SavedState): Promise<void> => {
-  await send(BASE, 'PUT', `/state/${encodeURIComponent(deviceId)}`, state);
+  await send(BASE, 'POST', `/state/${encodeURIComponent(deviceId)}`, state);
 };
