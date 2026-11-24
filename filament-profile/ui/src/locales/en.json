@@ -40,7 +40,6 @@
   "filament-profile.settings": "Settings written to the .ini",
   "filament-profile.settingsHint": "Edit a value to change it in the profile. A list (one value per extruder) is separated by commas.",
   "filament-profile.settingsFrom": "Starting from {section}.",
-  "filament-profile.settingsAdapted": "This profile is not made for the printer: its material settings are laid over {section}. Check them before printing.",
   "filament-profile.settingsReset": "Reset",
   "filament-profile.settingsLoading": "Reading the settings…",
   "filament-profile.set.filament_type": "Type",

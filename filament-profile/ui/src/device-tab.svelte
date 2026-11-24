@@ -601,11 +601,6 @@
                   <p class="text-xs text-muted-foreground">
                     {t('filament-profile.settingsFrom', { section: row.section || row.preset })}
                   </p>
-                  {#if row.adaptedTo !== ''}
-                    <p class="text-xs text-destructive">
-                      {t('filament-profile.settingsAdapted', { section: row.adaptedTo })}
-                    </p>
-                  {/if}
                   {#if row.properties}
                     <label class="flex items-center gap-2 text-xs text-muted-foreground">
                       <input

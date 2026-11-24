@@ -7,6 +7,10 @@ Write the entry in the same change as the code. One bullet per behaviour a
 person outside this repository can observe: a route, a setting, a screen, a
 refusal. Name the route and the setting key, never a function or a file.
 
+## 0.1.5
+
+- Remove the warning that a profile is not made for the printer, on every tool of the **Filament Profile** tab.
+
 ## 0.1.4
 
 - List only the profiles of the spool's brand and material type, and the generic profile of that type when there is none. `GET /match` no longer returns a preset of another material type.
