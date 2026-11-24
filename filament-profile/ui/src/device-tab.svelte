@@ -16,17 +16,20 @@
     getCatalogue,
     getMaterial,
     getSettings,
+    getState,
     listAllPresets,
     listPrinters,
     listTools,
     matchFilament,
     ProfileError,
+    putState,
     refreshCatalogue,
     writeBundle,
     type Candidate,
     type Printer,
     type Properties,
     type Request,
+    type SavedState,
     type Status,
     type ToolSource,
     type Tool,
@@ -72,6 +75,10 @@
   let rows = $state<Row[]>([]);
   /** Every profile on offer, whatever the printer. */
   let allPresets = $state<Candidate[]>([]);
+  /** What was chosen last time on this printer's tab, kept by the module. */
+  let saved: SavedState = {};
+  /** Set once the saved choices are back: only then does the tab keep its own. */
+  let loaded = $state(false);
   /** The tool whose settings are open. */
   let openId = $state('');
   /** Every tool of the printer, loaded or not: one alone is the extruder. */
@@ -149,6 +156,9 @@
 
   const swatch = (color: string): string | undefined =>
     /^#[0-9a-f]{6}(?:[0-9a-f]{2})?$/iu.test(color) ? color : undefined;
+
+  /** Names the spool a choice was made for: another spool drops the choice. */
+  const spoolKey = (row: Row): string => `${row.brand}|${row.material}|${row.type}`;
 
   const slotOf = (row: Row): number => order.indexOf(row.tool.id) + 1;
 
@@ -275,6 +285,31 @@
     );
   };
 
+  // Every choice is kept as it is made, to come back after a change of page or a restart.
+  $effect(() => {
+    if (!loaded) return;
+    const state: SavedState = {
+      printer,
+      tools: Object.fromEntries(
+        rows.map((row) => [
+          row.tool.id,
+          {
+            spool: spoolKey(row),
+            include: row.include,
+            name: row.profileName,
+            preset: row.preset,
+            edits: { ...row.edits },
+            ...(row.useProperties === undefined ? {} : { useProperties: row.useProperties }),
+          },
+        ]),
+      ),
+    };
+    const body = JSON.stringify(state);
+    const timer = setTimeout(() => void putState(deviceId, JSON.parse(body) as SavedState).catch(() => undefined), 300);
+
+    return () => clearTimeout(timer);
+  });
+
   // The list of printers follows what is typed.
   $effect(() => {
     const query = printerQuery.trim();
@@ -309,9 +344,9 @@
 
   // The printer chosen last time, with what is known of it.
   const restorePrinter = async (): Promise<void> => {
-    let stored = '';
+    let stored = saved.printer ?? '';
     try {
-      stored = localStorage.getItem(printerKey) ?? '';
+      if (stored === '') stored = localStorage.getItem(printerKey) ?? '';
     } catch {
       // See above.
     }
@@ -344,7 +379,18 @@
       toolCount = tools.length;
       order = tools.map((tool) => tool.id).sort(compareToolIds);
       rows = tools.flatMap((tool) => rowOf(tool) ?? []);
-      void loadProperties();
+      saved = await getState(deviceId, host.signal).catch((): SavedState => ({}));
+      for (const row of rows) {
+        const kept = saved.tools?.[row.tool.id];
+        if (kept?.spool !== spoolKey(row)) continue;
+        row.include = kept.include;
+        row.profileName = kept.name;
+        row.preset = kept.preset;
+        row.edits = { ...kept.edits };
+        row.useProperties = kept.useProperties;
+      }
+
+      await loadProperties();
       if (state.ready) {
         await restorePrinter();
         await searchPrinters();
@@ -352,6 +398,7 @@
         await matchAll();
       }
       openId = rows[0]?.tool.id ?? '';
+      loaded = true;
     } catch (error) {
       problem = message(error);
     } finally {

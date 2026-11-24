@@ -297,3 +297,26 @@ export const getSettings = (
 
   return json<Settings>(BASE, 'POST', '/settings', body, signal);
 };
+
+/** What is kept of a device's tab: the printer and, by tool, what was chosen. */
+export interface SavedTool {
+  /** The spool it was chosen for: a changed spool drops the choice. */
+  spool: string;
+  include: boolean;
+  name: string;
+  preset: string;
+  edits: Record<string, string>;
+  useProperties?: boolean;
+}
+
+export interface SavedState {
+  printer?: string;
+  tools?: Record<string, SavedTool>;
+}
+
+export const getState = (deviceId: string, signal?: AbortSignal): Promise<SavedState> =>
+  json<SavedState>(BASE, 'GET', `/state/${encodeURIComponent(deviceId)}`, undefined, signal);
+
+export const putState = async (deviceId: string, state: SavedState): Promise<void> => {
+  await send(BASE, 'PUT', `/state/${encodeURIComponent(deviceId)}`, state);
+};

@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -30,7 +31,7 @@ import (
 
 const (
 	name    = "filament-profile"
-	release = extension.Version("0.1.5")
+	release = extension.Version("0.1.7")
 )
 
 // Settings is what an operator writes under this instance's config block. The
@@ -468,6 +469,59 @@ func (m *module) routes() http.Handler {
 		})
 	})
 
+	// What a person chose on a printer's tab, kept so it survives a change of
+	// page and a restart of the module.
+	mux.HandleFunc("GET /state/{device}", func(w http.ResponseWriter, r *http.Request) {
+		path, ok := m.statePath(w, r)
+		if !ok {
+			return
+		}
+
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			raw = []byte("{}")
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(raw)
+	})
+
+	mux.HandleFunc("PUT /state/{device}", func(w http.ResponseWriter, r *http.Request) {
+		path, ok := m.statePath(w, r)
+		if !ok {
+			return
+		}
+
+		var raw json.RawMessage
+		if !decode(w, r, &raw) {
+			return
+		}
+
+		var object map[string]json.RawMessage
+		if json.Unmarshal(raw, &object) != nil {
+			refuse(w, r, BadRequest.New("the state is a JSON object"))
+
+			return
+		}
+
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			refuse(w, r, BadRequest.New("the state cannot be kept: "+err.Error()))
+
+			return
+		}
+
+		tmp := path + ".tmp"
+		if err := os.WriteFile(tmp, raw, 0o600); err == nil {
+			err = os.Rename(tmp, path)
+			if err != nil {
+				_ = os.Remove(tmp)
+			}
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	})
+
 	mux.HandleFunc("POST /bundle", func(w http.ResponseWriter, r *http.Request) {
 		c := m.ready(w, r)
 		if c == nil {
@@ -501,6 +555,31 @@ func (m *module) routes() http.Handler {
 	})
 
 	return mux
+}
+
+var deviceID = regexp.MustCompile(`^[A-Za-z0-9_-][A-Za-z0-9._-]{0,127}$`)
+
+// statePath is the file that keeps the choices made for one device. It refuses
+// an id that is not a plain name, so a request cannot leave the directory.
+func (m *module) statePath(w http.ResponseWriter, r *http.Request) (string, bool) {
+	m.mu.Lock()
+	dir, configured := m.dir, m.configured
+	m.mu.Unlock()
+
+	if !configured {
+		refuse(w, r, NotReady.New("the module has not been configured yet"))
+
+		return "", false
+	}
+
+	device := r.PathValue("device")
+	if !deviceID.MatchString(device) {
+		refuse(w, r, BadRequest.New("not a device id"))
+
+		return "", false
+	}
+
+	return filepath.Join(dir, "state", device+".json"), true
 }
 
 func nonNil(list []string) []string {
