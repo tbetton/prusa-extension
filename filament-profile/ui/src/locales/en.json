@@ -58,5 +58,6 @@
   "filament-profile.set.filament_retract_speed": "Retraction speed (mm/s)",
   "filament-profile.set.filament_cost": "Cost (per kg)",
   "filament-profile.noPrinter": "No printer preset matches “{query}”.",
-  "filament-profile.printerChosen": "Printer:"
+  "filament-profile.printerChosen": "Printer:",
+  "filament-profile.colourExtruders": "Colour the extruders with the spools' colours. The file then adds a copy of the printer preset, named “… (spools)”, and selects it."
 }

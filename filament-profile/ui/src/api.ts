@@ -250,8 +250,14 @@ export const listPrinters = async (q: string, signal?: AbortSignal): Promise<Pri
   ).printers;
 
 /** The Config Bundle text for these filaments. */
-export const writeBundle = async (printer: string, filaments: Request[]): Promise<string> =>
-  (await send(BASE, 'POST', '/bundle', { printer, filaments })).text();
+export const writeBundle = async (
+  printer: string,
+  filaments: Request[],
+  colourExtruders: boolean,
+): Promise<string> =>
+  (
+    await send(BASE, 'POST', '/bundle', { printer, filaments, colour_extruders: colourExtruders })
+  ).text();
 
 /** Every base preset the module offers, without its printer variants. */
 export const listAllPresets = async (signal?: AbortSignal): Promise<Candidate[]> =>

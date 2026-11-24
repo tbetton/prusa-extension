@@ -96,6 +96,8 @@
   let printerInfo = $state<Printer | undefined>(undefined);
   let printers = $state<Printer[]>([]);
   let printerQuery = $state('');
+  /** Whether the file adds a copy of the printer preset with the spools' colours on its extruders. */
+  let colourExtruders = $state(true);
   let loading = $state(true);
   let matching = $state(false);
   let busy = $state(false);
@@ -470,7 +472,7 @@
           if (Object.keys(row.edits).length > 0) request.overrides = { ...row.edits };
           return request;
         });
-      const text = await writeBundle(printer, filaments);
+      const text = await writeBundle(printer, filaments, colourExtruders);
       const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
       const link = document.createElement('a');
       link.href = url;
@@ -579,6 +581,10 @@
       <p class="text-xs text-muted-foreground">
         {printer === '' ? t('filament-profile.needPrinter') : t('filament-profile.printerHint')}
       </p>
+      <label class="flex items-center gap-2 text-xs text-muted-foreground">
+        <input type="checkbox" bind:checked={colourExtruders} />
+        {t('filament-profile.colourExtruders')}
+      </label>
       {#if tooManyTools}
         <p class="text-xs text-destructive">
           {t('filament-profile.fewExtruders', { count: String(printerInfo?.extruders ?? 0) })}

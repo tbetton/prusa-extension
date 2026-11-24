@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "filament-profile",
-    "version": "0.1.12",
+    "version": "0.1.13",
     "description": "PrusaSlicer 2.9 filament profiles for the spools on a printer. Every path is relative to the mount the host assigns."
   },
   "components": {
@@ -386,6 +386,10 @@
                   "printer": {
                     "type": "string",
                     "description": "A printer preset name. Forced in the bundle's [presets] section, and the preset of each filament is the section that fits it."
+                  },
+                  "colour_extruders": {
+                    "type": "boolean",
+                    "description": "Add a copy of the printer preset whose extruders carry the colours of the spools, and select that copy instead of the printer. The copy is the whole preset, flattened, with inherits naming the system preset."
                   }
                 },
                 "required": [

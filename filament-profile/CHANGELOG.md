@@ -7,6 +7,10 @@ Write the entry in the same change as the code. One bullet per behaviour a
 person outside this repository can observe: a route, a setting, a screen, a
 refusal. Name the route and the setting key, never a function or a file.
 
+## 0.1.13
+
+- Colour the extruders with the spools' colours. A **Colour the extruders** box on the **Filament Profile** tab (on by default) makes the downloaded file add a copy of the printer preset, named `<printer> (spools)`, whose `extruder_colour` holds the colour of each tool's spool, and select that copy instead of the system printer. `POST /bundle` takes `colour_extruders`. The copy is the whole printer preset with `inherits` naming the system one, because PrusaSlicer gives a key a section leaves out its default, not its parent's value. A tool with no colour keeps the printer's own colour for its extruder. Untick the box to keep the system printer.
+
 ## 0.1.12
 
 - Require the Materials extension (`com.github.aux.prusa3d.materials`, `>=0.2`). Installing Filament Profile installs it when it is missing, and the install plan lists it for approval. Filament Profile does not start without it, and Materials cannot be removed or switched off while Filament Profile is installed.

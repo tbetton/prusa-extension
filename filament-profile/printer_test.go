@@ -28,6 +28,7 @@ printer_model = COREONE_INDX8T
 printer_variant = HF0.4
 nozzle_diameter = 0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4
 nozzle_high_flow = 1,1,1,1,1,1,1,1
+extruder_colour = #F58231;#1F77B4
 printer_notes = PRINTER_VENDOR_PRUSA3D\nPRINTER_MODEL_COREONE_INDX\nPG
 
 [printer:Core One 0.4 nozzle]
@@ -544,5 +545,51 @@ func TestSettingsListTheEditableKeys(t *testing.T) {
 	settings, _, err := c.Settings(indx, Request{Base: "Generic PLA"})
 	if err != nil || len(settings) != len(editable) {
 		t.Fatalf("settings: %v %v", settings, err)
+	}
+}
+
+func TestBundleCanColourTheExtrudersWithTheSpools(t *testing.T) {
+	c := ParseCatalogue(printerFixture)
+
+	requests := []Request{
+		{Name: "A", Base: "Generic PLA", Slot: 1, ColorRGBA: "#112233ff"},
+		{Name: "B", Base: "Generic PLA", Slot: 3, ColorRGBA: "#aabbcc"},
+		{Name: "C", Base: "Generic PLA", Slot: 2}, // no colour: the printer's own stays
+	}
+
+	text, err := c.BundleWith(indx, requests, BundleOptions{ColourExtruders: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, want := range []string{
+		"[printer:Indx 8T HF0.4 nozzle (spools)]\ninherits = Indx 8T HF0.4 nozzle\n",
+		"extruder_colour = #112233;#1F77B4;#AABBCC;;;;;\n",
+		// The copy holds the whole preset: PrusaSlicer gives a key a section
+		// leaves out its default, not its parent's value.
+		"printer_model = COREONE_INDX8T\n",
+		"nozzle_diameter = 0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4\n",
+		"\n[presets]\nprinter = Indx 8T HF0.4 nozzle (spools)\nfilament = A @INDX HF0.4\n",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("bundle misses %q:\n%s", want, text)
+		}
+	}
+
+	if strings.Contains(text, "printer_settings_id") {
+		t.Errorf("the application's id was written:\n%s", text)
+	}
+
+	// Without the option, or without any colour, the printer is the system one.
+	for label, got := range map[string]func() (string, error){
+		"option off": func() (string, error) { return c.BundleWith(indx, requests, BundleOptions{}) },
+		"no colour": func() (string, error) {
+			return c.BundleWith(indx, []Request{{Name: "A", Base: "Generic PLA", Slot: 1}}, BundleOptions{ColourExtruders: true})
+		},
+	} {
+		text, err := got()
+		if err != nil || strings.Contains(text, "[printer:") || !strings.Contains(text, "printer = "+indx+"\n") {
+			t.Errorf("%s: %v\n%s", label, err, text)
+		}
 	}
 }

@@ -31,7 +31,7 @@ import (
 
 const (
 	name    = "filament-profile"
-	release = extension.Version("0.1.12")
+	release = extension.Version("0.1.13")
 )
 
 // Settings is what an operator writes under this instance's config block. The
@@ -281,6 +281,8 @@ type candidate struct {
 type bundleBody struct {
 	Printer   string    `json:"printer"`
 	Filaments []Request `json:"filaments"`
+	// ColourExtruders adds a copy of the printer preset with the spools' colours.
+	ColourExtruders bool `json:"colour_extruders"`
 }
 
 // maxSearch bounds the answer of GET /presets, and maxMatches the one of
@@ -539,7 +541,7 @@ func (m *module) routes() http.Handler {
 			return
 		}
 
-		text, err := c.Bundle(strings.TrimSpace(body.Printer), body.Filaments)
+		text, err := c.BundleWith(strings.TrimSpace(body.Printer), body.Filaments, BundleOptions{ColourExtruders: body.ColourExtruders})
 		if err != nil {
 			if errors.Is(err, errNoPreset) || errors.Is(err, errNoPrinter) {
 				refuse(w, r, NoPreset.New(err.Error()))

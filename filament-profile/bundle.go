@@ -333,10 +333,22 @@ func (c *Catalogue) Settings(printer string, req Request) (map[string]string, re
 	return out, start, nil
 }
 
+// BundleOptions are the choices that shape a bundle beyond its filaments.
+type BundleOptions struct {
+	// ColourExtruders adds a copy of the printer preset whose extruders carry
+	// the colours of the spools, and selects that copy instead of the printer.
+	ColourExtruders bool
+}
+
 // Bundle writes the Config Bundle for the requests. With a printer, it also
 // selects that printer when the bundle is imported, and every profile is the
 // section of its preset that fits it.
 func (c *Catalogue) Bundle(printer string, requests []Request) (string, error) {
+	return c.BundleWith(printer, requests, BundleOptions{})
+}
+
+// BundleWith is Bundle with options.
+func (c *Catalogue) BundleWith(printer string, requests []Request, opts BundleOptions) (string, error) {
 	switch {
 	case len(requests) == 0:
 		return "", errNoRequest
@@ -353,6 +365,7 @@ func (c *Catalogue) Bundle(printer string, requests []Request) (string, error) {
 
 	used := map[string]bool{}
 	selected := map[int]string{}
+	colours := map[int]string{}
 
 	for _, req := range requests {
 		name := presetName(req.Name)
@@ -403,8 +416,12 @@ func (c *Catalogue) Bundle(printer string, requests []Request) (string, error) {
 			set("filament_vendor", v)
 		}
 
+		chosen := ""
+
 		if hex, ok := colour(req.ColorRGBA); ok {
 			set("filament_colour", hex)
+
+			chosen = hex
 		}
 
 		note := "Written by filament-profile from " + strings.ReplaceAll(presetName(start.source), `"`, "")
@@ -438,6 +455,12 @@ func (c *Catalogue) Bundle(printer string, requests []Request) (string, error) {
 			note += "; edited settings: " + strings.Join(edited, ", ")
 		}
 
+		// A colour nobody gave is the preset's default, which says nothing of
+		// the spool, so it does not colour an extruder.
+		if req.Slot > 0 && chosen != "" {
+			colours[req.Slot] = chosen
+		}
+
 		set("filament_notes", `"`+note+`"`)
 
 		fmt.Fprintf(&out, "\n[filament:%s]\n", name)
@@ -452,11 +475,24 @@ func (c *Catalogue) Bundle(printer string, requests []Request) (string, error) {
 		}
 	}
 
+	forced := printer
+
+	if opts.ColourExtruders && printer != "" && len(colours) > 0 {
+		section, name, err := c.colouredPrinter(printer, colours)
+		if err != nil {
+			return "", err
+		}
+
+		out.WriteString("\n" + section)
+
+		forced = name
+	}
+
 	if printer != "" || len(selected) > 0 {
 		out.WriteString("\n[presets]\n")
 
-		if printer != "" {
-			fmt.Fprintf(&out, "printer = %s\n", printer)
+		if forced != "" {
+			fmt.Fprintf(&out, "printer = %s\n", forced)
 		}
 
 		slots := make([]int, 0, len(selected))
