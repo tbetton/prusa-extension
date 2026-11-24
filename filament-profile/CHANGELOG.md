@@ -7,6 +7,11 @@ Write the entry in the same change as the code. One bullet per behaviour a
 person outside this repository can observe: a route, a setting, a screen, a
 refusal. Name the route and the setting key, never a function or a file.
 
+## 0.1.3
+
+- Search the printer as you type on the **Filament Profile** tab: the printer presets that match appear under the field, and one click chooses it.
+- List only the profiles that may suit each spool, and the generic profile of its type. Every other profile is found with the search field.
+
 ## 0.1.2
 
 - Rework the **Filament Profile** tab. The printer search now only chooses the printer the `.ini` is written for. Each tool is one line (number, material type, colour, nozzle); a click opens its profile below. The list shows every profile, with a search field, whatever the printer. Beside it are the settings written to the `.ini` (temperatures, density, fan, retraction…), and each can be edited (`POST /settings`, `overrides` on `POST /bundle`). A profile that fits no section of the chosen printer is still written, laid over its generic preset.

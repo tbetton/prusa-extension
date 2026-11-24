@@ -233,9 +233,11 @@
     });
     if (words.length > 0) return found.slice(0, 150);
 
-    const first = row.best.flatMap((name) => found.filter((candidate) => candidate.preset === name));
+    // Without a search, only what may suit the spool: its nearest profiles and the generic one of its type.
+    const generic = `generic ${row.type.toLowerCase()}`;
+    const names = [...row.best, ...allPresets.map((c) => c.preset).filter((n) => n.toLowerCase() === generic)];
 
-    return [...first, ...found.filter((candidate) => !row.best.includes(candidate.preset))].slice(0, 150);
+    return [...new Set(names)].flatMap((name) => allPresets.filter((candidate) => candidate.preset === name));
   };
 
   const matchAll = async (): Promise<void> => {
@@ -272,6 +274,15 @@
       }),
     );
   };
+
+  // The list of printers follows what is typed.
+  $effect(() => {
+    const query = printerQuery.trim();
+    if (!status?.ready || query === '') return;
+    const timer = setTimeout(() => void searchPrinters(), 200);
+
+    return () => clearTimeout(timer);
+  });
 
   const searchPrinters = async (): Promise<void> => {
     try {
@@ -468,35 +479,41 @@
   {:else if rows.length > 0}
     <div class="flex flex-col gap-2">
       <label class="text-sm font-medium" for="fp-printer">{t('filament-profile.printer')}</label>
-      <form
-        class="flex flex-wrap items-center gap-2"
-        onsubmit={(event) => {
-          event.preventDefault();
-          void searchPrinters();
-        }}
-      >
-        <input
-          class="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-sm"
-          aria-label={t('filament-profile.printerSearch')}
-          placeholder={t('filament-profile.printerSearch')}
-          bind:value={printerQuery}
-        />
-        <Button size="sm" variant="secondary" type="submit">{t('filament-profile.searchButton')}</Button>
-      </form>
-      <select
+      <input
         id="fp-printer"
-        class="h-8 rounded-md border border-input bg-background px-2 text-sm"
-        value={printer}
-        onchange={(event) => void choosePrinter(event.currentTarget.value)}
-      >
-        <option value="">{t('filament-profile.printerPick')}</option>
-        {#if printerInfo !== undefined && !printers.some((p) => p.name === printer)}
-          <option value={printerInfo.name}>{printerInfo.name}</option>
-        {/if}
-        {#each printers as option (option.name)}
-          <option value={option.name}>{option.name} ({printerLabel(option)})</option>
-        {/each}
-      </select>
+        class="h-8 min-w-0 rounded-md border border-input bg-background px-2 text-sm"
+        placeholder={t('filament-profile.printerSearch')}
+        autocomplete="off"
+        bind:value={printerQuery}
+      />
+      {#if printerQuery.trim() !== ''}
+        <ul class="max-h-60 overflow-y-auto rounded-md border border-input" role="listbox">
+          {#each printers as option (option.name)}
+            <li role="option" aria-selected={option.name === printer}>
+              <button
+                type="button"
+                class="w-full px-2 py-1 text-left text-sm hover:bg-accent {option.name === printer
+                  ? 'bg-accent font-medium'
+                  : ''}"
+                onclick={() => {
+                  void choosePrinter(option.name);
+                  printerQuery = '';
+                }}
+              >
+                {option.name} ({printerLabel(option)})
+              </button>
+            </li>
+          {:else}
+            <li class="px-2 py-1 text-sm text-muted-foreground">
+              {t('filament-profile.noPrinter', { query: printerQuery.trim() })}
+            </li>
+          {/each}
+        </ul>
+      {:else if printer !== ''}
+        <p class="text-sm">
+          {t('filament-profile.printerChosen')} <span class="font-medium">{printer}</span>
+        </p>
+      {/if}
       <p class="text-xs text-muted-foreground">
         {printer === '' ? t('filament-profile.needPrinter') : t('filament-profile.printerHint')}
       </p>

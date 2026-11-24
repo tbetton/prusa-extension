@@ -57,5 +57,7 @@
   "filament-profile.set.bridge_fan_speed": "Fan, bridges (%)",
   "filament-profile.set.filament_retract_length": "Retraction length (mm)",
   "filament-profile.set.filament_retract_speed": "Retraction speed (mm/s)",
-  "filament-profile.set.filament_cost": "Cost (per kg)"
+  "filament-profile.set.filament_cost": "Cost (per kg)",
+  "filament-profile.noPrinter": "No printer preset matches “{query}”.",
+  "filament-profile.printerChosen": "Printer:"
 }
