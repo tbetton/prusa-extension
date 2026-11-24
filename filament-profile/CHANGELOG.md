@@ -7,17 +7,21 @@ Write the entry in the same change as the code. One bullet per behaviour a
 person outside this repository can observe: a route, a setting, a screen, a
 refusal. Name the route and the setting key, never a function or a file.
 
+## 0.1.9
+
+- Fix the choices of a printer's tab not being kept (HTTP 501): `GET` and `POST /state` now take the device as a `device` query parameter, not as a path segment.
+
 ## 0.1.8
 
-- Keep the choices of a printer's tab with `POST /state/{device}` instead of `PUT`, and say on the tab when they cannot be kept or read back, instead of failing without a word.
+- Keep the choices of a printer's tab with `POST /state` instead of `PUT`, and say on the tab when they cannot be kept or read back, instead of failing without a word.
 
 ## 0.1.7
 
-- Fix the module refusing to start because `GET /state/{device}` had no description in its OpenAPI fragment.
+- Fix the module refusing to start because `GET /state` had no description in its OpenAPI fragment.
 
 ## 0.1.6
 
-- Keep what is chosen on the **Filament Profile** tab of a printer: the printer, and for each tool its profile, its name, its edited settings and whether it is included. It comes back after a change of page and after the module restarts (`GET` and `POST /state/{device}`). A tool whose spool changed starts again.
+- Keep what is chosen on the **Filament Profile** tab of a printer: the printer, and for each tool its profile, its name, its edited settings and whether it is included. It comes back after a change of page and after the module restarts (`GET` and `POST /state`). A tool whose spool changed starts again.
 
 ## 0.1.5
 

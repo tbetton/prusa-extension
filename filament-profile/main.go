@@ -31,7 +31,7 @@ import (
 
 const (
 	name    = "filament-profile"
-	release = extension.Version("0.1.8")
+	release = extension.Version("0.1.9")
 )
 
 // Settings is what an operator writes under this instance's config block. The
@@ -471,7 +471,7 @@ func (m *module) routes() http.Handler {
 
 	// What a person chose on a printer's tab, kept so it survives a change of
 	// page and a restart of the module.
-	mux.HandleFunc("GET /state/{device}", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /state", func(w http.ResponseWriter, r *http.Request) {
 		path, ok := m.statePath(w, r)
 		if !ok {
 			return
@@ -487,7 +487,7 @@ func (m *module) routes() http.Handler {
 		_, _ = w.Write(raw)
 	})
 
-	mux.HandleFunc("POST /state/{device}", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /state", func(w http.ResponseWriter, r *http.Request) {
 		path, ok := m.statePath(w, r)
 		if !ok {
 			return
@@ -578,7 +578,7 @@ func (m *module) statePath(w http.ResponseWriter, r *http.Request) (string, bool
 		return "", false
 	}
 
-	device := r.PathValue("device")
+	device := r.URL.Query().Get("device")
 	if !deviceID.MatchString(device) {
 		refuse(w, r, BadRequest.New("not a device id"))
 
