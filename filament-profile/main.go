@@ -31,7 +31,7 @@ import (
 
 const (
 	name    = "filament-profile"
-	release = extension.Version("0.1.10")
+	release = extension.Version("0.1.11")
 )
 
 // Settings is what an operator writes under this instance's config block. The

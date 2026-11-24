@@ -7,6 +7,10 @@ Write the entry in the same change as the code. One bullet per behaviour a
 person outside this repository can observe: a route, a setting, a screen, a
 refusal. Name the route and the setting key, never a function or a file.
 
+## 0.1.11
+
+- Keep the choices of a tool until that tool is changed. A printer that reports nothing yet when the tab opens no longer wipes them, and without the Materials extension a choice follows the tool's type of material.
+
 ## 0.1.10
 
 - Fix the choices of a printer's tab not coming back (HTTP 501, `STATE_NOT_CONFIGURED`): the host keeps `/state` for its own module state, so the choices are now read and kept at `GET` and `POST /choices`.

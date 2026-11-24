@@ -30,6 +30,7 @@
     type Properties,
     type Request,
     type SavedState,
+    type SavedTool,
     type Status,
     type ToolSource,
     type Tool,
@@ -66,6 +67,8 @@
     section: string;
     adaptedTo: string;
     reading: boolean;
+    /** The person changed something here: only then is the tool's choice kept. */
+    touched: boolean;
     /** What the catalogue says of the material, when it says anything useful. */
     properties: Properties | undefined;
     /** Undefined follows the preset: the brand's temperatures replace a generic preset's. */
@@ -141,6 +144,7 @@
       section: '',
       adaptedTo: '',
       reading: false,
+      touched: false,
       properties: undefined,
       useProperties: undefined,
     };
@@ -191,6 +195,7 @@
   const shown = (row: Row, key: string): string => row.edits[key] ?? row.settings[key] ?? '';
 
   const edit = (row: Row, key: string, value: string): void => {
+    row.touched = true;
     if (value === (row.settings[key] ?? '')) delete row.edits[key];
     else row.edits[key] = value;
   };
@@ -222,6 +227,7 @@
   };
 
   const pick = (row: Row, preset: string): void => {
+    row.touched = true;
     row.preset = preset;
     row.edits = {};
     row.useProperties = undefined;
@@ -229,6 +235,7 @@
   };
 
   const useMaker = (row: Row, on: boolean): void => {
+    row.touched = true;
     row.useProperties = on;
     row.edits = {};
     void readSettings(row);
@@ -288,22 +295,23 @@
   // Every choice is kept as it is made, to come back after a change of page or a restart.
   $effect(() => {
     if (!loaded) return;
-    const state: SavedState = {
-      printer,
-      tools: Object.fromEntries(
-        rows.map((row) => [
-          row.tool.id,
-          {
-            spool: spoolKey(row),
-            include: row.include,
-            name: row.profileName,
-            preset: row.preset,
-            edits: { ...row.edits },
-            ...(row.useProperties === undefined ? {} : { useProperties: row.useProperties }),
-          },
-        ]),
-      ),
-    };
+    // What a tool kept stays until the person changes that tool: a printer that
+    // reports nothing yet, or another spool, does not wipe it.
+    const tools: Record<string, SavedTool> = { ...(saved.tools ?? {}) };
+    for (const row of rows) {
+      if (!row.touched) continue;
+      tools[row.tool.id] = {
+        spool: spoolKey(row),
+        include: row.include,
+        name: row.profileName,
+        preset: row.preset,
+        edits: { ...row.edits },
+        ...(row.useProperties === undefined ? {} : { useProperties: row.useProperties }),
+      };
+    }
+
+    const state: SavedState = { printer: printer !== '' ? printer : (saved.printer ?? ''), tools };
+    saved = state;
     const body = JSON.stringify(state);
     const timer = setTimeout(() => void putState(deviceId, JSON.parse(body) as SavedState).catch((error: unknown) => (problem = message(error))), 300);
 
@@ -386,12 +394,15 @@
       });
       for (const row of rows) {
         const kept = saved.tools?.[row.tool.id];
-        if (kept?.spool !== spoolKey(row)) continue;
+        // Without Materials the printer only knows the type: that is what a choice is tied to.
+        const same = kept?.spool === spoolKey(row) || (source === 'printer' && kept?.spool.split('|')[2] === row.type);
+        if (!kept || !same) continue;
         row.include = kept.include;
         row.profileName = kept.name;
         row.preset = kept.preset;
         row.edits = { ...kept.edits };
         row.useProperties = kept.useProperties;
+        row.touched = true;
       }
 
       await loadProperties();
@@ -581,7 +592,12 @@
         {@const open = openId === row.tool.id}
         <Card class="min-w-0">
           <div class="flex items-center gap-3 px-4 py-3">
-            <input type="checkbox" bind:checked={row.include} aria-label={labelOf(row)} />
+            <input
+              type="checkbox"
+              bind:checked={row.include}
+              onchange={() => (row.touched = true)}
+              aria-label={labelOf(row)}
+            />
             <button
               type="button"
               class="flex min-w-0 flex-1 items-center gap-3 text-left"
@@ -608,6 +624,7 @@
                   <input
                     class="h-8 rounded-md border border-input bg-background px-2 text-sm text-foreground"
                     bind:value={row.profileName}
+                    oninput={() => (row.touched = true)}
                   />
                 </label>
                 <input
@@ -678,7 +695,10 @@
                   </div>
                   {#if Object.keys(row.edits).length > 0}
                     <div>
-                      <Button size="sm" variant="ghost" onclick={() => (row.edits = {})}>
+                      <Button size="sm" variant="ghost" onclick={() => {
+                          row.edits = {};
+                          row.touched = true;
+                        }}>
                         {t('filament-profile.settingsReset')}
                       </Button>
                     </div>
