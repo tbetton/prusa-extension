@@ -2,7 +2,7 @@
 
 Filament Profile writes PrusaSlicer **2.9** filament profiles for the spools loaded on a printer. It adds a **Filament Profile** tab to a printer's page, next to the tools. For each tool it proposes the nearest preset of the profiles Prusa Research publishes, and writes one Config Bundle (`.ini`) you import in PrusaSlicer.
 
-1. Assign a material to each tool in the **Materials** extension, which gives the brand, the product, the colour and the maker's temperatures. Without Materials, the tab uses the type of material the printer reports for each tool (PLA, PETG…), and you name each profile yourself.
+1. Assign a material to each tool in the **Materials** extension, which Filament Profile requires and installs with it. It gives the brand, the product, the colour and the maker's temperatures. If Materials does not follow the printer, the tab falls back on the type of material the printer reports (PLA, PETG…), and you name each profile yourself.
 2. Open the **Filament Profile** tab of the printer.
 3. Pick the printer preset your PrusaSlicer uses, for example `Prusa CORE One INDX 8T HF0.4 nozzle`. The tab then offers only the filament presets PrusaSlicer lists for that printer, and the file forces the printer.
 4. Check the profile name and the preset for each tool, then download the `.ini`.
@@ -21,7 +21,7 @@ The `sources` setting (default `prusa,polymaker`) chooses where filament presets
 ## Data
 
 - Source: the Prusa Research profile archive for PrusaSlicer 2.x, plus the sources above. The extension downloads it from `catalogue_url` and keeps the newest bundle in its data directory.
-- The extension reads the tools from the Materials extension (`GET /printers/{device}/tools`), or from the printer's own report when Materials is not available. It stores nothing about your printers.
+- The extension reads the tools from the Materials extension (`GET /printers/{device}/tools`), or from the printer's own report when Materials does not follow the printer. It stores nothing about your printers.
 - Not supported yet: LayerHub (its API needs an account), and PrusaSlicer 3, which uses a different, YAML-based profile format.
 
 The extension displays its interface and error messages in English.

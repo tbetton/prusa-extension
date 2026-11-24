@@ -4,7 +4,7 @@
 
 name: filament-profile
 kind: sink
-version: 0.1.11
+version: 0.1.12
 license: MIT
 title: Filament Profile
 summary: Write PrusaSlicer 2.9 filament profiles for the spools loaded on a printer.
@@ -21,6 +21,10 @@ platforms:
 
 require:
   core: ">=0.1.0-beta.1"
+  # The Materials extension says which spool is on which tool: its brand, its
+  # product, its colour and the maker's temperatures. Installing this module
+  # installs it too, when it is missing.
+  com.github.aux.prusa3d.materials: ">=0.2"
 
 # Every connection the process makes outside Prusa Connect.
 egress:

@@ -7,6 +7,10 @@ Write the entry in the same change as the code. One bullet per behaviour a
 person outside this repository can observe: a route, a setting, a screen, a
 refusal. Name the route and the setting key, never a function or a file.
 
+## 0.1.12
+
+- Require the Materials extension (`com.github.aux.prusa3d.materials`, `>=0.2`). Installing Filament Profile installs it when it is missing, and the install plan lists it for approval. Filament Profile does not start without it, and Materials cannot be removed or switched off while Filament Profile is installed.
+
 ## 0.1.11
 
 - Keep the choices of a tool until that tool is changed. A printer that reports nothing yet when the tab opens no longer wipes them, and without the Materials extension a choice follows the tool's type of material.
