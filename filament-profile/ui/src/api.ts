@@ -168,6 +168,8 @@ export interface Request {
   slot?: number;
   /** The maker's advised temperatures and the density. */
   properties?: Properties;
+  /** Settings the person edited, by key: they win over the preset. */
+  overrides?: Record<string, string>;
 }
 
 /** What the OpenPrintTag catalogue says of one material. Absent or 0 is unknown. */
@@ -250,3 +252,48 @@ export const listPrinters = async (q: string, signal?: AbortSignal): Promise<Pri
 /** The Config Bundle text for these filaments. */
 export const writeBundle = async (printer: string, filaments: Request[]): Promise<string> =>
   (await send(BASE, 'POST', '/bundle', { printer, filaments })).text();
+
+/** Every base preset the module offers, without its printer variants. */
+export const listAllPresets = async (signal?: AbortSignal): Promise<Candidate[]> =>
+  (
+    await json<{ presets: Candidate[] }>(BASE, 'GET', '/presets?limit=2000&brief=1', undefined, signal)
+  ).presets;
+
+/** The settings a profile would be written with, and the section they come from. */
+export interface Settings {
+  settings: Record<string, string>;
+  section: string;
+  /** The generic preset the settings were laid over, when the preset did not fit the printer. */
+  adapted?: string;
+}
+
+/** The keys a person may edit, in the order the panel shows them. */
+export const EDITABLE = [
+  'filament_type',
+  'temperature',
+  'first_layer_temperature',
+  'bed_temperature',
+  'first_layer_bed_temperature',
+  'filament_density',
+  'filament_diameter',
+  'extrusion_multiplier',
+  'filament_max_volumetric_speed',
+  'min_fan_speed',
+  'max_fan_speed',
+  'bridge_fan_speed',
+  'filament_retract_length',
+  'filament_retract_speed',
+  'filament_cost',
+] as const;
+
+export const getSettings = (
+  base: string,
+  printer: string,
+  properties: Properties | undefined,
+  signal?: AbortSignal,
+): Promise<Settings> => {
+  const body: Record<string, unknown> = { base, printer };
+  if (properties) body.properties = properties;
+
+  return json<Settings>(BASE, 'POST', '/settings', body, signal);
+};

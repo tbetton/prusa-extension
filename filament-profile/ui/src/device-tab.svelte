@@ -12,14 +12,16 @@
   } from '@prusa/connect-ui/primitives';
 
   import {
+    EDITABLE,
     getCatalogue,
     getMaterial,
+    getSettings,
+    listAllPresets,
     listPrinters,
     listTools,
     matchFilament,
     ProfileError,
     refreshCatalogue,
-    searchPresets,
     writeBundle,
     type Candidate,
     type Printer,
@@ -51,11 +53,16 @@
     color: string;
     include: boolean;
     profileName: string;
-    candidates: Candidate[];
+    /** The profiles that look like the spool, offered first. */
+    best: string[];
     preset: string;
     query: string;
-    /** What the last search found. */
-    searchNote: string;
+    /** What the profile would be written with, and what the person changed. */
+    settings: Record<string, string>;
+    edits: Record<string, string>;
+    section: string;
+    adaptedTo: string;
+    reading: boolean;
     /** What the catalogue says of the material, when it says anything useful. */
     properties: Properties | undefined;
     /** Undefined follows the preset: the brand's temperatures replace a generic preset's. */
@@ -63,6 +70,10 @@
   }
 
   let rows = $state<Row[]>([]);
+  /** Every profile on offer, whatever the printer. */
+  let allPresets = $state<Candidate[]>([]);
+  /** The tool whose settings are open. */
+  let openId = $state('');
   /** Every tool of the printer, loaded or not: one alone is the extruder. */
   let toolCount = $state(0);
   /** Where the tools were read: Materials knows the brand and the product, the printer alone does not. */
@@ -115,10 +126,14 @@
       color: tool.assignment?.color_rgba || tool.reported?.color_rgba || '',
       include: true,
       profileName: profileNameOf(brand, material || type),
-      candidates: [],
+      best: [],
       preset: '',
       query: '',
-      searchNote: '',
+      settings: {},
+      edits: {},
+      section: '',
+      adaptedTo: '',
+      reading: false,
       properties: undefined,
       useProperties: undefined,
     };
@@ -154,28 +169,74 @@
       .filter((part) => part !== '')
       .join(' · ');
 
-  const candidateOf = (row: Row): Candidate | undefined =>
-    row.candidates.find((candidate) => candidate.preset === row.preset);
-
-  /** A preset in a list: its name, its source when it is not Prusa's, and whether it is adapted. */
-  const candidateLabel = (candidate: Candidate): string =>
-    [
-      candidate.preset,
-      candidate.source !== undefined && candidate.source !== 'prusa' ? `· ${candidate.source}` : '',
-      candidate.adapted === true ? `(${t('filament-profile.adapted')})` : '',
-    ]
-      .filter((part) => part !== '')
-      .join(' ');
-
   const printerLabel = (p: Printer): string =>
     `${String(p.nozzle_diameter ?? '')}${p.high_flow ? ' HF' : ''}`.trim();
 
-  /** The nozzle of a printer preset differs from the one the tool has. */
-  const nozzleDiffers = (row: Row): boolean =>
-    printerInfo !== undefined &&
-    printerInfo.nozzle_diameter !== undefined &&
-    (printerInfo.nozzle_diameter !== row.tool.nozzle.diameter_mm ||
-      printerInfo.high_flow !== row.tool.nozzle.high_flow);
+  /** A profile in the list: its name, and its source when it is not Prusa's. */
+  const presetLabel = (candidate: Candidate): string =>
+    candidate.source !== undefined && candidate.source !== 'prusa'
+      ? `${candidate.preset} · ${candidate.source}`
+      : candidate.preset;
+
+  const shown = (row: Row, key: string): string => row.edits[key] ?? row.settings[key] ?? '';
+
+  const edit = (row: Row, key: string, value: string): void => {
+    if (value === (row.settings[key] ?? '')) delete row.edits[key];
+    else row.edits[key] = value;
+  };
+
+  // A newer reading of a tool's settings replaces an older one still on its way.
+  const readings = new Map<string, number>();
+
+  const readSettings = async (row: Row): Promise<void> => {
+    if (row.preset === '') return;
+    const turn = (readings.get(row.tool.id) ?? 0) + 1;
+    readings.set(row.tool.id, turn);
+    row.reading = true;
+    try {
+      const found = await getSettings(
+        row.preset,
+        printer,
+        useOf(row) ? row.properties : undefined,
+        host.signal,
+      );
+      if (readings.get(row.tool.id) !== turn) return;
+      row.settings = found.settings;
+      row.section = found.section;
+      row.adaptedTo = found.adapted ?? '';
+    } catch (error) {
+      if (readings.get(row.tool.id) === turn) problem = message(error);
+    } finally {
+      if (readings.get(row.tool.id) === turn) row.reading = false;
+    }
+  };
+
+  const pick = (row: Row, preset: string): void => {
+    row.preset = preset;
+    row.edits = {};
+    row.useProperties = undefined;
+    void readSettings(row);
+  };
+
+  const useMaker = (row: Row, on: boolean): void => {
+    row.useProperties = on;
+    row.edits = {};
+    void readSettings(row);
+  };
+
+  const listed = (row: Row): Candidate[] => {
+    const words = row.query.toLowerCase().split(/\s+/u).filter((word) => word !== '');
+    const found = allPresets.filter((candidate) => {
+      const name = candidate.preset.toLowerCase();
+
+      return words.every((word) => name.includes(word));
+    });
+    if (words.length > 0) return found.slice(0, 150);
+
+    const first = row.best.flatMap((name) => found.filter((candidate) => candidate.preset === name));
+
+    return [...first, ...found.filter((candidate) => !row.best.includes(candidate.preset))].slice(0, 150);
+  };
 
   const matchAll = async (): Promise<void> => {
     matching = true;
@@ -183,9 +244,10 @@
       await Promise.all(
         rows.map(async (row) => {
           try {
-            row.candidates = await matchFilament(row.brand, row.material, row.type, printer, host.signal);
-            row.preset = row.candidates[0]?.preset ?? '';
-            row.searchNote = '';
+            const found = await matchFilament(row.brand, row.material, row.type, '', host.signal);
+            row.best = found.map((candidate) => candidate.preset);
+            if (row.preset === '') row.preset = row.best[0] ?? '';
+            await readSettings(row);
           } catch (error) {
             problem = message(error);
           }
@@ -231,7 +293,7 @@
     printer = name;
     printerInfo = name === '' ? undefined : (printers.find((p) => p.name === name) ?? printerInfo);
     remember(name);
-    if (status?.ready) await matchAll();
+    await Promise.all(rows.map((row) => readSettings(row)));
   };
 
   // The printer chosen last time, with what is known of it.
@@ -275,8 +337,10 @@
       if (state.ready) {
         await restorePrinter();
         await searchPrinters();
+        allPresets = await listAllPresets(host.signal);
         await matchAll();
       }
+      openId = rows[0]?.tool.id ?? '';
     } catch (error) {
       problem = message(error);
     } finally {
@@ -293,6 +357,7 @@
         if (status.ready) {
           await restorePrinter();
           await searchPrinters();
+          allPresets = await listAllPresets(host.signal);
           await matchAll();
         }
       } catch {
@@ -304,27 +369,6 @@
   onMount(() => {
     void load().then(wait);
   });
-
-  const search = async (row: Row): Promise<void> => {
-    const query = row.query.trim();
-    try {
-      const found = await searchPresets(query, printer, host.signal);
-
-      // The presets already offered stay: a search adds to the list, it does not replace it.
-      const seen = new Set(found.map((candidate) => candidate.preset));
-      row.candidates = [...found, ...row.candidates.filter((candidate) => !seen.has(candidate.preset))];
-      if (found[0]) row.preset = found[0].preset;
-
-      row.searchNote =
-        found.length === 0
-          ? t(printer === '' ? 'filament-profile.noResults' : 'filament-profile.noResultsFit', { query })
-          : t(printer === '' ? 'filament-profile.foundAny' : 'filament-profile.foundFit', {
-              count: String(found.length),
-            });
-    } catch (error) {
-      problem = message(error);
-    }
-  };
 
   const refresh = async (): Promise<void> => {
     try {
@@ -350,6 +394,7 @@
           if (row.brand !== '') request.vendor = row.brand;
           if (row.color !== '') request.color_rgba = row.color;
           if (useOf(row) && row.properties) request.properties = row.properties;
+          if (Object.keys(row.edits).length > 0) request.overrides = { ...row.edits };
           return request;
         });
       const text = await writeBundle(printer, filaments);
@@ -462,97 +507,123 @@
       {/if}
     </div>
 
-    <div class="grid gap-3 md:grid-cols-2">
+    <div class="flex flex-col gap-2">
       {#each rows as row (row.tool.id)}
         {@const color = swatch(row.color)}
-        {@const picked = candidateOf(row)}
+        {@const open = openId === row.tool.id}
         <Card class="min-w-0">
-          <CardHeader>
-            <div class="flex items-center justify-between gap-2">
-              <CardTitle>
-                <label class="flex items-center gap-2">
-                  <input type="checkbox" bind:checked={row.include} />
-                  {labelOf(row)}
-                </label>
-              </CardTitle>
-              <div class="flex items-center gap-2">
-                {#if color}
-                  <span class="size-4 rounded-full border border-border" style:background-color={color}></span>
-                {/if}
-                <Badge variant="outline">{row.type}</Badge>
-                <Badge variant="outline">{nozzleToken(row.tool.nozzle)}</Badge>
-              </div>
-            </div>
-            <p class="text-sm text-muted-foreground">{[row.brand, row.material].filter(Boolean).join(' · ')}</p>
-          </CardHeader>
-          <CardContent class="flex flex-col gap-2">
-            <label class="flex flex-col gap-1 text-xs text-muted-foreground">
-              {t('filament-profile.name')}
-              <input
-                class="h-8 rounded-md border border-input bg-background px-2 text-sm text-foreground"
-                bind:value={row.profileName}
-              />
-            </label>
-            <label class="flex flex-col gap-1 text-xs text-muted-foreground">
-              {t('filament-profile.preset')}
-              <select
-                class="h-8 rounded-md border border-input bg-background px-2 text-sm text-foreground"
-                bind:value={row.preset}
-                disabled={row.candidates.length === 0}
-              >
-                {#each row.candidates as candidate (candidate.preset)}
-                  <option value={candidate.preset}>{candidateLabel(candidate)}</option>
-                {/each}
-              </select>
-            </label>
-            <form
-              class="flex gap-2"
-              onsubmit={(event) => {
-                event.preventDefault();
-                void search(row);
-              }}
+          <div class="flex items-center gap-3 px-4 py-3">
+            <input type="checkbox" bind:checked={row.include} aria-label={labelOf(row)} />
+            <button
+              type="button"
+              class="flex min-w-0 flex-1 items-center gap-3 text-left"
+              aria-expanded={open}
+              onclick={() => (openId = open ? '' : row.tool.id)}
             >
-              <input
-                class="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-sm"
-                aria-label={t('filament-profile.search')}
-                placeholder={t('filament-profile.search')}
-                bind:value={row.query}
-              />
-              <Button size="sm" variant="secondary" type="submit" disabled={row.query.trim() === ''}>
-                {t('filament-profile.searchButton')}
-              </Button>
-            </form>
-            {#if row.searchNote !== ''}
-              <p class="text-xs text-muted-foreground" role="status">{row.searchNote}</p>
-            {/if}
-            {#if printer !== '' && row.candidates.length === 0 && !matching}
-              <p class="text-xs text-destructive">{t('filament-profile.noFit')}</p>
-            {/if}
-            {#if row.properties}
-              <label class="flex items-center gap-2 text-xs text-muted-foreground">
+              <span class="shrink-0 font-semibold">{labelOf(row)}</span>
+              {#if color}
+                <span class="size-4 shrink-0 rounded-full border border-border" style:background-color={color}></span>
+              {/if}
+              <Badge variant="outline">{row.type}</Badge>
+              <Badge variant="outline">{nozzleToken(row.tool.nozzle)}</Badge>
+              <span class="min-w-0 flex-1 truncate text-sm text-muted-foreground">
+                {[row.brand, row.material].filter(Boolean).join(' · ')}
+              </span>
+              <span class="shrink-0 text-muted-foreground" aria-hidden="true">{open ? '▾' : '▸'}</span>
+            </button>
+          </div>
+          {#if open}
+            <CardContent class="grid gap-4 border-t border-border pt-4 md:grid-cols-2">
+              <div class="flex min-w-0 flex-col gap-2">
+                <label class="flex flex-col gap-1 text-xs text-muted-foreground">
+                  {t('filament-profile.name')}
+                  <input
+                    class="h-8 rounded-md border border-input bg-background px-2 text-sm text-foreground"
+                    bind:value={row.profileName}
+                  />
+                </label>
                 <input
-                  type="checkbox"
-                  checked={useOf(row)}
-                  onchange={(event) => (row.useProperties = event.currentTarget.checked)}
+                  class="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                  aria-label={t('filament-profile.searchPresets')}
+                  placeholder={t('filament-profile.searchPresets')}
+                  bind:value={row.query}
                 />
-                {t('filament-profile.useCatalogue')} ({summaryOf(row.properties)})
-              </label>
-            {/if}
-            {#if picked?.section}
-              <p class="text-xs text-muted-foreground">{t('filament-profile.section', { section: picked.section })}</p>
-            {/if}
-            {#if picked?.adapted === true}
-              <p class="text-xs text-destructive">{t('filament-profile.adaptedNote')}</p>
-            {/if}
-            {#if nozzleDiffers(row) && printerInfo}
-              <p class="text-xs text-muted-foreground">
-                {t('filament-profile.nozzleDiffers', {
-                  tool: nozzleToken(row.tool.nozzle),
-                  printer: printerLabel(printerInfo),
-                })}
-              </p>
-            {/if}
-          </CardContent>
+                {#if true}
+                  {@const shownList = listed(row)}
+                  <p class="text-xs text-muted-foreground">
+                    {t('filament-profile.profiles', { count: String(shownList.length) })}
+                  </p>
+                  <ul class="max-h-72 overflow-y-auto rounded-md border border-input" role="listbox">
+                    {#each shownList as candidate (candidate.preset)}
+                      <li role="option" aria-selected={candidate.preset === row.preset}>
+                        <button
+                          type="button"
+                          class="w-full px-2 py-1 text-left text-sm hover:bg-accent {candidate.preset === row.preset
+                            ? 'bg-accent font-medium'
+                            : ''}"
+                          onclick={() => pick(row, candidate.preset)}
+                        >
+                          {presetLabel(candidate)}
+                        </button>
+                      </li>
+                    {:else}
+                      <li class="px-2 py-1 text-sm text-muted-foreground">
+                        {t('filament-profile.noMatch', { query: row.query.trim() })}
+                      </li>
+                    {/each}
+                  </ul>
+                {/if}
+              </div>
+
+              <div class="flex min-w-0 flex-col gap-2">
+                <p class="text-sm font-medium">{t('filament-profile.settings')}</p>
+                <p class="text-xs text-muted-foreground">{t('filament-profile.settingsHint')}</p>
+                {#if row.preset === ''}
+                  <p class="text-xs text-muted-foreground">{t('filament-profile.settingsLoading')}</p>
+                {:else}
+                  <p class="text-xs text-muted-foreground">
+                    {t('filament-profile.settingsFrom', { section: row.section || row.preset })}
+                  </p>
+                  {#if row.adaptedTo !== ''}
+                    <p class="text-xs text-destructive">
+                      {t('filament-profile.settingsAdapted', { section: row.adaptedTo })}
+                    </p>
+                  {/if}
+                  {#if row.properties}
+                    <label class="flex items-center gap-2 text-xs text-muted-foreground">
+                      <input
+                        type="checkbox"
+                        checked={useOf(row)}
+                        onchange={(event) => useMaker(row, event.currentTarget.checked)}
+                      />
+                      {t('filament-profile.useCatalogue')} ({summaryOf(row.properties)})
+                    </label>
+                  {/if}
+                  <div class="grid grid-cols-2 gap-2" aria-busy={row.reading}>
+                    {#each EDITABLE as key (key)}
+                      <label class="flex flex-col gap-1 text-xs text-muted-foreground">
+                        {t(`filament-profile.set.${key}`)}
+                        <input
+                          class="h-8 rounded-md border bg-background px-2 text-sm text-foreground {key in row.edits
+                            ? 'border-primary'
+                            : 'border-input'}"
+                          value={shown(row, key)}
+                          oninput={(event) => edit(row, key, event.currentTarget.value)}
+                        />
+                      </label>
+                    {/each}
+                  </div>
+                  {#if Object.keys(row.edits).length > 0}
+                    <div>
+                      <Button size="sm" variant="ghost" onclick={() => (row.edits = {})}>
+                        {t('filament-profile.settingsReset')}
+                      </Button>
+                    </div>
+                  {/if}
+                {/if}
+              </div>
+            </CardContent>
+          {/if}
         </Card>
       {/each}
     </div>

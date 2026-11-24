@@ -16,6 +16,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -285,6 +286,7 @@ type bundleBody struct {
 // GET /match. A page filters them by printer, so more than a few come back.
 const (
 	maxSearch  = 50
+	maxList    = 2000
 	maxMatches = 20
 )
 
@@ -399,6 +401,13 @@ func (m *module) routes() http.Handler {
 		variants := c.Variants()
 		bases := c.Bases()
 
+		// A page that lists every preset asks for a long answer without the
+		// printer variants it does not read.
+		limit, brief := maxSearch, q.Get("brief") == "1"
+		if n, err := strconv.Atoi(q.Get("limit")); err == nil && n > 0 {
+			limit = min(n, maxList)
+		}
+
 		sort.Strings(bases)
 
 		out := []candidate{}
@@ -408,13 +417,55 @@ func (m *module) routes() http.Handler {
 				continue
 			}
 
-			out = append(out, describe(c, base, printer, 0, variants))
-			if len(out) == maxSearch {
+			if brief {
+				out = append(out, candidate{Preset: base, Source: c.BaseSource(base), Variants: []string{}})
+			} else {
+				out = append(out, describe(c, base, printer, 0, variants))
+			}
+
+			if len(out) == limit {
 				break
 			}
 		}
 
 		answer(w, http.StatusOK, map[string]any{"presets": out})
+	})
+
+	// The settings a profile would be written with, to edit before the bundle.
+	mux.HandleFunc("POST /settings", func(w http.ResponseWriter, r *http.Request) {
+		c := m.ready(w, r)
+		if c == nil {
+			return
+		}
+
+		var body struct {
+			Printer    string      `json:"printer"`
+			Base       string      `json:"base"`
+			Properties *Properties `json:"properties,omitempty"`
+		}
+		if !decode(w, r, &body) {
+			return
+		}
+
+		printer := strings.TrimSpace(body.Printer)
+		if printer != "" && !c.HasPrinter(printer) {
+			refuse(w, r, NoPreset.New("no such printer preset: "+printer))
+
+			return
+		}
+
+		settings, start, err := c.Settings(printer, Request{Base: body.Base, Properties: body.Properties})
+		if err != nil {
+			refuse(w, r, NoPreset.New(err.Error()))
+
+			return
+		}
+
+		answer(w, http.StatusOK, map[string]any{
+			"settings": settings,
+			"section":  start.source,
+			"adapted":  start.adapted,
+		})
 	})
 
 	mux.HandleFunc("POST /bundle", func(w http.ResponseWriter, r *http.Request) {

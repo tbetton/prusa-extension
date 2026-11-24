@@ -266,11 +266,18 @@ func TestBundleForcesThePrinterAndTheSectionThatFits(t *testing.T) {
 	}
 }
 
-func TestBundleRefusesAPresetThatDoesNotFitOrAPrinterItDoesNotKnow(t *testing.T) {
+func TestBundleWritesAPresetThatDoesNotFitAndRefusesAPrinterItDoesNotKnow(t *testing.T) {
 	c := ParseCatalogue(printerFixture)
 
-	if _, err := c.Bundle(indx, []Request{{Name: "Mine", Base: "Elegoo PLA"}}); !errors.Is(err, errNoPreset) {
-		t.Errorf("a preset that does not fit gave %v", err)
+	// A preset that fits no section of the printer is still written: it is
+	// laid over a generic preset, or freed from its compatibility.
+	text, err := c.Bundle(indx, []Request{{Name: "Mine", Base: "Elegoo PLA"}})
+	if err != nil || !strings.Contains(text, "[filament:Mine") {
+		t.Errorf("a preset that does not fit gave %v\n%s", err, text)
+	}
+
+	if _, err := c.Bundle(indx, []Request{{Name: "Mine", Base: "Nope"}}); !errors.Is(err, errNoPreset) {
+		t.Errorf("an unknown preset gave %v", err)
 	}
 
 	if _, err := c.Bundle("Nope", []Request{{Name: "Mine", Base: "Generic PLA"}}); !errors.Is(err, errNoPrinter) {
@@ -505,5 +512,37 @@ func TestRoutesFilterByPrinter(t *testing.T) {
 	rec = do(t, m, http.MethodPost, "/bundle", `{"printer":"Nope","filaments":[{"name":"Mine","base":"Generic PLA"}]}`)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("a bundle for an unknown printer gave %d", rec.Code)
+	}
+}
+
+func TestEditedSettingsWinAndAreChecked(t *testing.T) {
+	c := ParseCatalogue(printerFixture)
+
+	text, err := c.Bundle(indx, []Request{{
+		Name: "Mine", Base: "Generic PLA",
+		Overrides: map[string]string{"temperature": "215", "filament_type": "PLA"},
+	}})
+	if err != nil || !strings.Contains(text, "\ntemperature = 215\n") {
+		t.Fatalf("an edited temperature was lost: %v\n%s", err, text)
+	}
+
+	for _, bad := range []map[string]string{
+		{"temperature": "9999"},
+		{"temperature": "hot"},
+		{"filament_type": "PLA\n[x]"},
+		{"start_filament_gcode": "M104 S0"},
+	} {
+		if _, err := c.Bundle(indx, []Request{{Name: "Mine", Base: "Generic PLA", Overrides: bad}}); !errors.Is(err, errOverride) {
+			t.Errorf("%v gave %v", bad, err)
+		}
+	}
+}
+
+func TestSettingsListTheEditableKeys(t *testing.T) {
+	c := ParseCatalogue(printerFixture)
+
+	settings, _, err := c.Settings(indx, Request{Base: "Generic PLA"})
+	if err != nil || len(settings) != len(editable) {
+		t.Fatalf("settings: %v %v", settings, err)
 	}
 }

@@ -108,6 +108,13 @@
           },
           "properties": {
             "$ref": "#/components/schemas/Properties"
+          },
+          "overrides": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Settings a person edited, by key (filament_type, temperature, first_layer_temperature, bed_temperature, first_layer_bed_temperature, filament_density, filament_diameter, extrusion_multiplier, filament_max_volumetric_speed, min_fan_speed, max_fan_speed, bridge_fan_speed, filament_retract_length, filament_retract_speed, filament_cost). They win over the preset and over properties. A value out of range is refused."
           }
         },
         "required": [
@@ -301,6 +308,28 @@
               "type": "string"
             },
             "description": "A printer preset name. Only presets that fit it are returned, as PrusaSlicer's own list shows them."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 2000
+            },
+            "description": "The most presets to return. Defaults to 50."
+          },
+          {
+            "name": "brief",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ]
+            },
+            "description": "1 leaves out the printer variants."
           }
         ],
         "responses": {
@@ -425,6 +454,73 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "The profiles are not downloaded yet."
+          }
+        }
+      }
+    },
+    "/settings": {
+      "post": {
+        "operationId": "get-settings",
+        "summary": "The settings a profile would be written with",
+        "description": "The editable settings of a preset for a printer, to show and change before the bundle is written. A preset that fits no section of the printer is laid over its generic preset.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "base": {
+                    "type": "string"
+                  },
+                  "printer": {
+                    "type": "string"
+                  },
+                  "properties": {
+                    "$ref": "#/components/schemas/Properties"
+                  }
+                },
+                "required": [
+                  "base"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The settings by key, the section they come from, and the generic preset they were laid over when adapted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "settings": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "section": {
+                      "type": "string"
+                    },
+                    "adapted": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "settings",
+                    "section"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The preset or the printer is not in the profiles."
           },
           "503": {
             "description": "The profiles are not downloaded yet."

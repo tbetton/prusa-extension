@@ -35,6 +35,9 @@ type Request struct {
 	// Properties are the maker's advised temperatures and the density, from
 	// the OpenPrintTag catalogue. They replace the base's own. Absent keeps them.
 	Properties *Properties `json:"properties,omitempty"`
+	// Overrides are settings a person edited, by key. They come last and win
+	// over the base and over Properties. Only the keys in editable are read.
+	Overrides map[string]string `json:"overrides,omitempty"`
 }
 
 // MaxRequests bounds one bundle: a printer has few tools.
@@ -115,45 +118,32 @@ type resolved struct {
 	source, adapted string
 }
 
-// start returns the settings a request starts from. With a printer, the
-// section is the one that fits it. Without one, it is the base and its Variant.
-func (c *Catalogue) start(printer string, req Request) (resolved, error) {
-	if printer == "" {
-		source := req.Base
-		if v := strings.TrimSpace(req.Variant); v != "" {
-			source += " @" + v
+// anySection names a visible section of a base preset, the shortest first: the
+// base itself when it has one, else its shortest printer variant.
+func (c *Catalogue) anySection(base string) string {
+	best := ""
+
+	for _, name := range c.byBase[base] {
+		if c.visible(name) && (best == "" || len(name) < len(best)) {
+			best = name
 		}
-
-		keys, vals, err := c.Flatten(source)
-
-		return resolved{keys: keys, vals: vals, named: source, source: source}, err
 	}
 
-	res, err := c.Resolve(req.Base, printer)
+	return best
+}
+
+// lay puts the material settings of own over the generic preset reference,
+// which keeps what belongs to the printer. A flow tuned for another nozzle is
+// kept only when it asks less of this one than the generic preset does.
+func (c *Catalogue) lay(reference, section string) ([]string, map[string]string, error) {
+	keys, vals, err := c.Flatten(reference)
 	if err != nil {
-		return resolved{}, err
+		return nil, nil, err
 	}
 
-	if res.Section == "" {
-		return resolved{}, fmt.Errorf("%w: %q has no preset for %q", errNoPreset, req.Base, printer)
-	}
-
-	if res.Reference == "" {
-		keys, vals, err := c.Flatten(res.Section)
-
-		return resolved{keys: keys, vals: vals, named: res.Section, source: res.Section}, err
-	}
-
-	// The preset is of another source and does not fit as written: take a
-	// generic preset that fits, and lay the material's settings over it.
-	keys, vals, err := c.Flatten(res.Reference)
+	_, own, err := c.Flatten(section)
 	if err != nil {
-		return resolved{}, err
-	}
-
-	_, own, err := c.Flatten(res.Section)
-	if err != nil {
-		return resolved{}, err
+		return nil, nil, err
 	}
 
 	set := func(key, value string) {
@@ -170,8 +160,6 @@ func (c *Catalogue) start(printer string, req Request) (resolved, error) {
 		}
 	}
 
-	// A flow the source tuned for another nozzle is kept only when it asks
-	// less of this one than the generic preset does.
 	mine, errMine := strconv.ParseFloat(strings.TrimSpace(own[volumetric]), 64)
 	limit, errLimit := strconv.ParseFloat(strings.TrimSpace(vals[volumetric]), 64)
 
@@ -179,7 +167,170 @@ func (c *Catalogue) start(printer string, req Request) (resolved, error) {
 		set(volumetric, strings.TrimSpace(own[volumetric]))
 	}
 
-	return resolved{keys: keys, vals: vals, named: res.Reference, source: res.Section, adapted: res.Reference}, nil
+	return keys, vals, nil
+}
+
+// start returns the settings a request starts from. With a printer, the
+// section is the one that fits it; a preset that fits none is laid over the
+// generic preset of its material that fits, or else freed from its
+// compatibility, so it is offered on that printer all the same. Without a
+// printer, it is the base and its Variant.
+func (c *Catalogue) start(printer string, req Request) (resolved, error) {
+	if printer == "" {
+		source := req.Base
+		if v := strings.TrimSpace(req.Variant); v != "" {
+			source += " @" + v
+		} else if !c.Has(source) {
+			source = c.anySection(req.Base)
+		}
+
+		if source == "" {
+			return resolved{}, fmt.Errorf("%w: %q", errNoPreset, req.Base)
+		}
+
+		keys, vals, err := c.Flatten(source)
+
+		return resolved{keys: keys, vals: vals, named: source, source: source}, err
+	}
+
+	res, err := c.Resolve(req.Base, printer)
+	if err != nil {
+		return resolved{}, err
+	}
+
+	if res.Section != "" && res.Reference == "" {
+		keys, vals, err := c.Flatten(res.Section)
+
+		return resolved{keys: keys, vals: vals, named: res.Section, source: res.Section}, err
+	}
+
+	section, reference := res.Section, res.Reference
+
+	if section == "" {
+		if section = c.anySection(req.Base); section == "" {
+			return resolved{}, fmt.Errorf("%w: %q", errNoPreset, req.Base)
+		}
+
+		_, own, err := c.Flatten(section)
+		if err != nil {
+			return resolved{}, err
+		}
+
+		if kind := strings.ToUpper(strings.TrimSpace(own["filament_type"])); kind != "" {
+			reference, _ = c.SectionFor("Generic "+kind, printer)
+		}
+
+		if reference == "" {
+			keys, vals, err := c.Flatten(section)
+			if err != nil {
+				return resolved{}, err
+			}
+
+			for _, key := range []string{"compatible_printers", "compatible_printers_condition"} {
+				if _, seen := vals[key]; !seen {
+					keys = append(keys, key)
+				}
+
+				vals[key] = ""
+			}
+
+			return resolved{keys: keys, vals: vals, named: section, source: section}, nil
+		}
+	}
+
+	keys, vals, err := c.lay(reference, section)
+	if err != nil {
+		return resolved{}, err
+	}
+
+	return resolved{keys: keys, vals: vals, named: reference, source: section, adapted: reference}, nil
+}
+
+// editable are the settings a person may change before the bundle is
+// written, with the highest value each takes. A zero bound is a word, not a
+// number.
+var editable = []struct {
+	Key string
+	Max float64
+}{
+	{"filament_type", 0},
+	{"temperature", 450},
+	{"first_layer_temperature", 450},
+	{"bed_temperature", 150},
+	{"first_layer_bed_temperature", 150},
+	{"filament_density", 25},
+	{"filament_diameter", 5},
+	{"extrusion_multiplier", 2},
+	{"filament_max_volumetric_speed", 100},
+	{"min_fan_speed", 100},
+	{"max_fan_speed", 100},
+	{"bridge_fan_speed", 100},
+	{"filament_retract_length", 30},
+	{"filament_retract_speed", 200},
+	{"filament_cost", 10000},
+}
+
+var errOverride = errors.New("a setting is out of range")
+
+// checkOverride accepts one edited value: a word for the type, else numbers,
+// one per extruder, or "nil" to follow the printer.
+func checkOverride(key, value string) (string, error) {
+	value = oneLine(value)
+
+	for _, e := range editable {
+		if e.Key != key {
+			continue
+		}
+
+		if e.Max == 0 {
+			if len(value) == 0 || len(value) > 16 || strings.Trim(value, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-") != "" {
+				return "", fmt.Errorf("%w: %s", errOverride, key)
+			}
+
+			return value, nil
+		}
+
+		parts := strings.Split(value, ",")
+		if len(parts) > 16 {
+			return "", fmt.Errorf("%w: %s", errOverride, key)
+		}
+
+		for _, part := range parts {
+			part = strings.TrimSpace(part)
+			if part == "nil" {
+				continue
+			}
+
+			n, err := strconv.ParseFloat(part, 64)
+			if err != nil || n < 0 || n > e.Max {
+				return "", fmt.Errorf("%w: %s", errOverride, key)
+			}
+		}
+
+		return strings.ReplaceAll(value, " ", ""), nil
+	}
+
+	return "", fmt.Errorf("%w: %s is not a setting to edit", errOverride, key)
+}
+
+// Settings returns what a request would write for the editable keys, and the
+// section it is taken from.
+func (c *Catalogue) Settings(printer string, req Request) (map[string]string, resolved, error) {
+	start, err := c.start(printer, req)
+	if err != nil {
+		return nil, start, err
+	}
+
+	set := func(key, value string) { start.vals[key] = value }
+	req.Properties.apply(start.vals, set)
+
+	out := map[string]string{}
+
+	for _, e := range editable {
+		out[e.Key] = start.vals[e.Key]
+	}
+
+	return out, start, nil
 }
 
 // Bundle writes the Config Bundle for the requests. With a printer, it also
@@ -265,6 +416,26 @@ func (c *Catalogue) Bundle(printer string, requests []Request) (string, error) {
 
 		if req.Properties.apply(vals, set) {
 			note += "; temperatures and density from the OpenPrintTag catalogue"
+		}
+
+		edited := make([]string, 0, len(req.Overrides))
+		for key := range req.Overrides {
+			edited = append(edited, key)
+		}
+
+		sort.Strings(edited)
+
+		for _, key := range edited {
+			value, err := checkOverride(key, req.Overrides[key])
+			if err != nil {
+				return "", err
+			}
+
+			set(key, value)
+		}
+
+		if len(edited) > 0 {
+			note += "; edited settings: " + strings.Join(edited, ", ")
 		}
 
 		set("filament_notes", `"`+note+`"`)
