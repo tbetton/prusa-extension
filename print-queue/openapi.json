@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "print-queue",
-    "version": "0.2.0",
+    "version": "0.3.2",
     "description": "A queue of prints for each printer. Every path is relative to the mount the host assigns."
   },
   "components": {
@@ -67,17 +67,78 @@
           "added_at",
           "status"
         ]
+      },
+      "InboxItem": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "modified": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "name",
+          "path",
+          "size",
+          "modified"
+        ]
+      },
+      "Inbox": {
+        "type": "object",
+        "properties": {
+          "storage": {
+            "type": "string"
+          },
+          "folder": {
+            "type": "string"
+          },
+          "auto": {
+            "type": "boolean"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InboxItem"
+            }
+          },
+          "custom": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "storage",
+          "folder",
+          "auto",
+          "items",
+          "custom"
+        ]
       }
     }
   },
   "paths": {
-    "/devices/{id}/ready": {
-      "post": {
-        "operationId": "mark-printer-ready",
-        "summary": "Mark a printer ready after confirming its plate is empty",
-        "description": "Requires permission to operate the printer. The next queued job can start once the printer reports READY.",
+    "/devices/{id}/inbox-folder": {
+      "put": {
+        "operationId": "set-inbox-folder",
+        "summary": "Choose the folder of a printer's uploads",
+        "description": "Requires permission to operate the printer. The folder is relative to the inbox storage. An empty folder goes back to the folder named after the printer, under the inbox folder or at the root of the storage.",
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
         "requestBody": {
           "required": true,
@@ -86,21 +147,243 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "plate_empty": { "const": true, "type": "boolean" }
+                  "folder": {
+                    "type": "string"
+                  }
                 },
-                "required": ["plate_empty"]
+                "required": [
+                  "folder"
+                ]
               }
             }
           }
         },
         "responses": {
-          "204": { "description": "The printer accepted the READY command." },
-          "400": { "description": "The request did not confirm an empty plate." },
-          "403": { "description": "The caller cannot operate the printer." },
-          "404": { "description": "The printer is unavailable." },
-          "409": { "description": "The printer is busy or could not accept READY." },
-          "500": { "description": "The queue could not save the confirmation." },
-          "503": { "description": "The module is starting." }
+          "204": {
+            "description": "The folder is saved."
+          },
+          "400": {
+            "description": "The folder is not valid."
+          },
+          "403": {
+            "description": "The caller cannot operate the printer."
+          },
+          "404": {
+            "description": "The printer is unavailable."
+          },
+          "500": {
+            "description": "The setting could not be saved."
+          },
+          "503": {
+            "description": "The module is starting."
+          }
+        }
+      }
+    },
+    "/devices/{id}/inbox": {
+      "get": {
+        "operationId": "get-printer-inbox",
+        "summary": "Files PrusaSlicer left for a printer",
+        "description": "Requires permission to operate the printer. Lists the printable files in the printer's folder of the inbox storage that were neither added to a queue nor ignored.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The files waiting.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Inbox"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller cannot operate the printer."
+          },
+          "404": {
+            "description": "The printer is unavailable."
+          },
+          "503": {
+            "description": "The module is starting, or the storage could not be read."
+          }
+        }
+      }
+    },
+    "/devices/{id}/inbox/dismiss": {
+      "post": {
+        "operationId": "dismiss-inbox-file",
+        "summary": "Ignore a file of a printer's inbox",
+        "description": "Requires permission to operate the printer. The file is offered again only if it is saved again.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "path"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "The file is ignored, or was not waiting."
+          },
+          "400": {
+            "description": "The request is not valid."
+          },
+          "403": {
+            "description": "The caller cannot operate the printer."
+          },
+          "404": {
+            "description": "The printer is unavailable."
+          },
+          "500": {
+            "description": "The mark could not be saved."
+          },
+          "503": {
+            "description": "The module is starting, or the storage could not be read."
+          }
+        }
+      }
+    },
+    "/devices/{id}/inbox-auto": {
+      "put": {
+        "operationId": "set-inbox-auto",
+        "summary": "Add a printer's new uploads to its queue by themselves",
+        "description": "Requires permission to operate the printer. The files are queued as the caller, and only while the caller may still operate the printer and read the storage.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "enabled"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "The setting is saved."
+          },
+          "400": {
+            "description": "The request is not valid."
+          },
+          "403": {
+            "description": "The caller cannot operate the printer."
+          },
+          "404": {
+            "description": "The printer is unavailable."
+          },
+          "500": {
+            "description": "The setting could not be saved."
+          },
+          "503": {
+            "description": "The module is starting."
+          }
+        }
+      }
+    },
+    "/devices/{id}/ready": {
+      "post": {
+        "operationId": "mark-printer-ready",
+        "summary": "Mark a printer ready after confirming its plate is empty",
+        "description": "Requires permission to operate the printer. The next queued job can start once the printer reports READY.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "plate_empty": {
+                    "const": true,
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "plate_empty"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "The printer accepted the READY command."
+          },
+          "400": {
+            "description": "The request did not confirm an empty plate."
+          },
+          "403": {
+            "description": "The caller cannot operate the printer."
+          },
+          "404": {
+            "description": "The printer is unavailable."
+          },
+          "409": {
+            "description": "The printer is busy or could not accept READY."
+          },
+          "500": {
+            "description": "The queue could not save the confirmation."
+          },
+          "503": {
+            "description": "The module is starting."
+          }
         }
       }
     },
@@ -141,7 +424,9 @@
                     "ready_confirmation_required": {
                       "type": "object",
                       "description": "Printers that need a new manual readiness confirmation after an earlier command.",
-                      "additionalProperties": { "type": "boolean" }
+                      "additionalProperties": {
+                        "type": "boolean"
+                      }
                     },
                     "problem": {
                       "type": "string"
