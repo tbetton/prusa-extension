@@ -7,7 +7,7 @@ Write the entry in the same change as the code. One bullet per behaviour a
 person outside this repository can observe: a route, a setting, a screen, a
 refusal. Name the route and the setting key, never a function or a file.
 
-## 0.2.1
+## 0.2.2
 
 - Add a **Server storage** tab next to **Printer drive** in **Add a file**. It lists the storages of the server, so a file that the PrusaSlicer 2 Connector saved there can be queued without opening the storage.
 - Show a **PrusaSlicer** page under Settings, Extensions, Print Queue. It explains how to send a file from PrusaSlicer 2 with the PrusaSlicer 2 Connector extension, which Print Queue does not require.
