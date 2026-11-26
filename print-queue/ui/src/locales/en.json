@@ -114,10 +114,10 @@
   "print-queue.howTo.steps.install": "Install the PrusaSlicer 2 Connector extension in Settings, Extensions. Print Queue works without it.",
   "print-queue.howTo.steps.card": "Open a printer's page, its Printer tab, and the PrusaSlicer 2 Connector card under Connection. Press Create an API key and copy the address and the key.",
   "print-queue.howTo.steps.slicer": "In PrusaSlicer, press Add physical printer. Set Host Type to PrusaLink, paste the address, set Authorization Type to API key and paste the key. Press Test.",
-  "print-queue.howTo.steps.save": "On the same card, turn on Save to storage and pick the storage local and a folder, for example the printer's name.",
+  "print-queue.howTo.steps.save": "In Print Queue, press Set up PrusaSlicer uploads on the printer's card. It turns on Save to storage on the connector for that printer and picks its folder, print-queue followed by the printer's name. You can also pick the storage and the folder yourself on the connector's card: Print Queue then reads the folder it shows.",
   "print-queue.howTo.steps.queue": "Slice, then press Upload in PrusaSlicer. Do not press Upload and Print: that starts the file at once and skips the queue.",
-  "print-queue.howTo.steps.add": "In Print Queue, the printer's card shows the new files under From PrusaSlicer. If it finds none, type the folder you picked in its Folder field. Press Add on a file, or turn on Add new uploads to the queue by themselves so that each upload joins the queue.",
-  "print-queue.howTo.limits": "The connector sends the file to the printer's drive as well, so the printer must be reachable when you press Upload, and a second upload sent while the printer is still receiving the first fails. It takes .gcode and .bgcode files only. A file saved again under the same name is offered again. Print Queue finds a folder named after the printer in print-queue or at the root of the storage by itself. An administrator can change that folder with the inbox_storage and inbox_folder settings.",
+  "print-queue.howTo.steps.add": "In Print Queue, the printer's card shows the new files under From PrusaSlicer. Press Add on a file, or turn on Add new uploads to the queue by themselves so that each upload joins the queue.",
+  "print-queue.howTo.limits": "The connector sends the file to the printer's drive as well, so the printer must be reachable when you press Upload, and a second upload sent while the printer is still receiving the first fails. It takes .gcode and .bgcode files only. A file saved again under the same name is offered again. Without the connector, type the folder in the Folder field of From PrusaSlicer. An administrator can change the default storage and folder with the inbox_storage and inbox_folder settings.",
   "print-queue.fault.STORAGE_UNAVAILABLE": "The storage could not be read. Try again.",
   "print-queue.inbox.title": "From PrusaSlicer",
   "print-queue.inbox.add": "Add",
@@ -129,5 +129,11 @@
   "print-queue.inbox.ignored": "{name} ignored",
   "print-queue.inbox.folderLabel": "Folder",
   "print-queue.inbox.folderSave": "Save",
-  "print-queue.inbox.folderHint": "Type the folder chosen under Save to storage on the connector's card. Leave it empty to use the folder named after the printer, in print-queue or at the root of the storage."
+  "print-queue.inbox.folderHint": "Type the folder chosen under Save to storage on the connector's card. Leave it empty to use the folder named after the printer, in print-queue or at the root of the storage.",
+  "print-queue.inbox.noConnector": "The PrusaSlicer 2 Connector is not installed, or you may not see it. Install it in Settings, Extensions to send files from PrusaSlicer.",
+  "print-queue.inbox.connectorFolder": "The PrusaSlicer 2 Connector saves this printer's uploads in {folder} of the storage {storage}.",
+  "print-queue.inbox.storageMismatch": "Print Queue reads the storage {inbox}, not {storage}. Change the storage on the connector's card, or inbox_storage in the settings of Print Queue.",
+  "print-queue.inbox.setup": "Set up PrusaSlicer uploads",
+  "print-queue.inbox.setupHint": "Saves this printer's uploads in {folder} of the storage {storage}, with Save to storage on the connector.",
+  "print-queue.inbox.connectorLocked": "You may not change where the PrusaSlicer 2 Connector saves this printer's uploads."
 }

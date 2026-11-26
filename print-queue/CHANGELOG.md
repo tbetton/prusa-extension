@@ -7,6 +7,11 @@ Write the entry in the same change as the code. One bullet per behaviour a
 person outside this repository can observe: a route, a setting, a screen, a
 refusal. Name the route and the setting key, never a function or a file.
 
+## 0.3.2
+
+- Add **Set up PrusaSlicer uploads** to **From PrusaSlicer**. It asks the PrusaSlicer 2 Connector, when it is installed, to save the printer's uploads in `print-queue/<printer name>` of the storage `inbox_storage`, and Print Queue reads that folder. It needs the permission to change **Save to storage** on the connector.
+- Read the folder the connector already uses for a printer, and follow it when it changes, instead of the **Folder** field. The field stays for a server without the connector.
+
 ## 0.3.1
 
 - Find the folder of a printer's uploads by itself: the folder named after the printer, under `inbox_folder` or at the root of the storage. A folder with another name is typed in the new **Folder** field of **From PrusaSlicer**.

@@ -12,10 +12,14 @@
 
   import {
     addJob,
+    ConnectorError,
     dismissInboxItem,
+    getConnectorKeep,
     getInbox,
+    setConnectorKeep,
     setInboxAuto,
     setInboxFolder,
+    type ConnectorKeep,
     type Inbox,
     type InboxItem,
   } from './api';
@@ -34,13 +38,36 @@
   const t = host.t;
 
   let inbox = $state<Inbox | undefined>(undefined);
+  /** What the PrusaSlicer 2 Connector says, or nothing when it is not installed. */
+  let keep = $state<ConnectorKeep | undefined>(undefined);
   let busy = $state(false);
   /** What is typed in the folder field, until it is saved. */
   let draft = $state<string | undefined>(undefined);
 
+  const failureText = (error: unknown): string =>
+    error instanceof ConnectorError ? error.message : queueErrorText(error, t);
+
   const load = async (): Promise<void> => {
     try {
-      inbox = await getInbox(deviceId, host.signal);
+      let next = await getInbox(deviceId, host.signal);
+      const connector = await getConnectorKeep(deviceId, host.signal);
+      // The connector decides where the uploads go, so Print Queue reads there.
+      if (
+        connector?.on === true &&
+        connector.folder !== undefined &&
+        connector.folder !== '' &&
+        connector.storage === next.storage &&
+        connector.folder !== next.folder
+      ) {
+        try {
+          await setInboxFolder(deviceId, connector.folder);
+          next = await getInbox(deviceId, host.signal);
+        } catch {
+          // the next turn tries again
+        }
+      }
+      inbox = next;
+      keep = connector;
     } catch {
       // Not allowed, or the module is starting: the next turn tries again.
       if (host.signal.aborted) return;
@@ -94,6 +121,22 @@
       draft = undefined;
     } catch (error) {
       toast.error(queueErrorText(error, t));
+    } finally {
+      busy = false;
+      await load();
+    }
+  };
+
+  // Ask the connector to save this printer's uploads in the folder Print
+  // Queue expects, and read that folder from now on.
+  const setup = async (): Promise<void> => {
+    if (inbox === undefined) return;
+    busy = true;
+    try {
+      await setConnectorKeep(deviceId, inbox.storage, inbox.folder);
+      await setInboxFolder(deviceId, inbox.folder);
+    } catch (error) {
+      toast.error(failureText(error));
     } finally {
       busy = false;
       await load();
@@ -155,22 +198,45 @@
         {t('print-queue.inbox.folder', { folder: inbox.folder, storage: inbox.storage })}
         {inbox.auto ? '' : t('print-queue.inbox.autoHint')}
       </p>
-      <div class="flex flex-wrap items-center gap-2">
-        <label class="text-xs text-muted-foreground" for={`inbox-folder-${deviceId}`}>
-          {t('print-queue.inbox.folderLabel')}
-        </label>
-        <Input
-          id={`inbox-folder-${deviceId}`}
-          class="max-w-xs"
-          value={draft ?? (inbox.custom ? inbox.folder : '')}
-          placeholder={inbox.custom ? '' : inbox.folder}
-          oninput={(event: Event) => (draft = (event.currentTarget as HTMLInputElement).value)}
-        />
-        <Button size="sm" variant="secondary" disabled={busy || draft === undefined} onclick={() => void saveFolder()}>
-          {t('print-queue.inbox.folderSave')}
-        </Button>
-      </div>
-      <p class="text-xs text-muted-foreground">{t('print-queue.inbox.folderHint')}</p>
+      {#if keep !== undefined && keep.on && keep.folder}
+        <p class="text-xs text-muted-foreground">
+          {t('print-queue.inbox.connectorFolder', { folder: keep.folder, storage: keep.storage })}
+        </p>
+        {#if keep.storage !== inbox.storage}
+          <p class="text-xs text-warning">
+            {t('print-queue.inbox.storageMismatch', { inbox: inbox.storage, storage: keep.storage })}
+          </p>
+        {/if}
+      {:else if keep !== undefined && keep.may_change}
+        <div class="flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="secondary" disabled={busy} onclick={() => void setup()}>
+            {t('print-queue.inbox.setup')}
+          </Button>
+          <span class="text-xs text-muted-foreground">
+            {t('print-queue.inbox.setupHint', { folder: inbox.folder, storage: inbox.storage })}
+          </span>
+        </div>
+      {:else}
+        <p class="text-xs text-muted-foreground">
+          {keep === undefined ? t('print-queue.inbox.noConnector') : t('print-queue.inbox.connectorLocked')}
+        </p>
+        <div class="flex flex-wrap items-center gap-2">
+          <label class="text-xs text-muted-foreground" for={`inbox-folder-${deviceId}`}>
+            {t('print-queue.inbox.folderLabel')}
+          </label>
+          <Input
+            id={`inbox-folder-${deviceId}`}
+            class="max-w-xs"
+            value={draft ?? (inbox.custom ? inbox.folder : '')}
+            placeholder={inbox.custom ? '' : inbox.folder}
+            oninput={(event: Event) => (draft = (event.currentTarget as HTMLInputElement).value)}
+          />
+          <Button size="sm" variant="secondary" disabled={busy || draft === undefined} onclick={() => void saveFolder()}>
+            {t('print-queue.inbox.folderSave')}
+          </Button>
+        </div>
+        <p class="text-xs text-muted-foreground">{t('print-queue.inbox.folderHint')}</p>
+      {/if}
     {/if}
   </div>
 {/if}
