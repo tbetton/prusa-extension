@@ -14,7 +14,7 @@ Print Queue manages a separate queue for each printer. When a printer reports **
 Print Queue does not require another extension. The PrusaSlicer 2 Connector extension published by Prusa lets PrusaSlicer 2.4 and later send a file to a printer of the server as to a printer with PrusaLink. PrusaSlicer shows only **Upload** and **Upload and Print** for that kind of host, never a queue.
 
 1. Install the PrusaSlicer 2 Connector, add the printer in PrusaSlicer as a PrusaLink host with an API key, and turn on **Save to storage** on the connector's card for the printer.
-2. Pick the storage `local` and the folder `print-queue/<printer name>`, for example `print-queue/Core One`. The folder is named after the printer, apart from case and spacing, or after its id.
+2. Pick the storage `local` and a folder, for example the printer's name. Print Queue finds a folder named after the printer, apart from case and spacing or after its id, in `print-queue` or at the root of the storage. For any other folder, type it in the **Folder** field of **From PrusaSlicer** on the printer's card.
 3. Press **Upload** in PrusaSlicer, not **Upload and Print**, which starts the file at once.
 4. On the printer's card in Print Queue, **From PrusaSlicer** lists the new files. Press **Add** to queue one, or turn on **Add new uploads to the queue by themselves**. The files then join the queue as the person who turned the switch on, while that person may operate the printer and read the storage.
 

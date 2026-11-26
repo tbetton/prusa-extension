@@ -166,3 +166,72 @@ func TestInboxMarksAndAutoAdd(t *testing.T) {
 		t.Fatal("turning the switch off clears it")
 	}
 }
+
+func TestInboxFolderChoice(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0)
+	old := now.Add(-time.Hour).Unix()
+
+	m := &module{
+		inboxStorage: "local",
+		inboxFolder:  "print-queue",
+		list: func(_ context.Context, _, folder string) ([]storageapi.ListEntry, error) {
+			switch folder {
+			case "":
+				return []storageapi.ListEntry{{Name: "COREONEINDX", Dir: true}, {Name: "queue", Dir: true}}, nil
+			case "COREONEINDX", "queue":
+				return []storageapi.ListEntry{{Name: "a.bgcode", Size: 10, MTime: old}}, nil
+			}
+
+			return nil, errors.New("no such folder")
+		},
+	}
+
+	store, err := OpenStore("", time.Now, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	device := deviceapi.Device{ID: "p1", Name: "COREONEINDX"}
+
+	view, err := m.inboxScan(context.Background(), device, store, now)
+	if err != nil || view.Folder != "COREONEINDX" || view.Custom || len(view.Items) != 1 ||
+		view.Items[0].Path != "COREONEINDX/a.bgcode" {
+		t.Fatalf("a folder named after the printer at the root is found: %+v %v", view, err)
+	}
+
+	if err = store.SetInboxFolder("p1", "queue"); err != nil {
+		t.Fatal(err)
+	}
+
+	view, err = m.inboxScan(context.Background(), device, store, now)
+	if err != nil || view.Folder != "queue" || !view.Custom || len(view.Items) != 1 {
+		t.Fatalf("the folder a person chose wins: %+v %v", view, err)
+	}
+
+	if err = store.SetInboxFolder("p1", "not/there"); err != nil {
+		t.Fatal(err)
+	}
+
+	view, err = m.inboxScan(context.Background(), device, store, now)
+	if err != nil || view.Folder != "not/there" || len(view.Items) != 0 {
+		t.Fatalf("a chosen folder that does not exist yet is an empty inbox: %+v %v", view, err)
+	}
+
+	if err = store.SetInboxFolder("p1", ""); err != nil || store.InboxFolderOf("p1") != "" {
+		t.Fatal("an empty folder goes back to the automatic one")
+	}
+}
+
+func TestCleanInboxFolder(t *testing.T) {
+	for in, want := range map[string]string{"": "", " /queue/ ": "queue", "a/b": "a/b"} {
+		if got, ok := cleanInboxFolder(in); !ok || got != want {
+			t.Fatalf("cleanInboxFolder(%q) = %q %v", in, got, ok)
+		}
+	}
+
+	for _, in := range []string{"../x", "a/../b", ".pcl-meta", "a/.hidden", `a\b`} {
+		if _, ok := cleanInboxFolder(in); ok {
+			t.Fatalf("cleanInboxFolder(%q) should be refused", in)
+		}
+	}
+}

@@ -7,6 +7,11 @@ Write the entry in the same change as the code. One bullet per behaviour a
 person outside this repository can observe: a route, a setting, a screen, a
 refusal. Name the route and the setting key, never a function or a file.
 
+## 0.3.1
+
+- Find the folder of a printer's uploads by itself: the folder named after the printer, under `inbox_folder` or at the root of the storage. A folder with another name is typed in the new **Folder** field of **From PrusaSlicer**.
+- Set that folder with `PUT /devices/{id}/inbox-folder`, which needs permission to operate the printer. An empty folder goes back to the automatic one.
+
 ## 0.3.0
 
 - Show **From PrusaSlicer** on each printer: the files that the PrusaSlicer 2 Connector saved in the folder named after the printer, under the `inbox_folder` of the storage `inbox_storage`. **Add** puts a file in the printer's queue and **Ignore** hides it. A file saved again under the same name is offered again.

@@ -8,9 +8,17 @@
 -->
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { Badge, Button, toast } from '@prusa/connect-ui/primitives';
+  import { Badge, Button, Input, toast } from '@prusa/connect-ui/primitives';
 
-  import { addJob, dismissInboxItem, getInbox, setInboxAuto, type Inbox, type InboxItem } from './api';
+  import {
+    addJob,
+    dismissInboxItem,
+    getInbox,
+    setInboxAuto,
+    setInboxFolder,
+    type Inbox,
+    type InboxItem,
+  } from './api';
   import { heldHost } from './host';
   import { formatClock, formatNumber, queueErrorText } from './i18n';
 
@@ -27,6 +35,8 @@
 
   let inbox = $state<Inbox | undefined>(undefined);
   let busy = $state(false);
+  /** What is typed in the folder field, until it is saved. */
+  let draft = $state<string | undefined>(undefined);
 
   const load = async (): Promise<void> => {
     try {
@@ -68,6 +78,20 @@
     try {
       await dismissInboxItem(deviceId, item.path);
       toast.success(t('print-queue.inbox.ignored', { name: item.name }));
+    } catch (error) {
+      toast.error(queueErrorText(error, t));
+    } finally {
+      busy = false;
+      await load();
+    }
+  };
+
+  const saveFolder = async (): Promise<void> => {
+    if (draft === undefined) return;
+    busy = true;
+    try {
+      await setInboxFolder(deviceId, draft);
+      draft = undefined;
     } catch (error) {
       toast.error(queueErrorText(error, t));
     } finally {
@@ -131,6 +155,22 @@
         {t('print-queue.inbox.folder', { folder: inbox.folder, storage: inbox.storage })}
         {inbox.auto ? '' : t('print-queue.inbox.autoHint')}
       </p>
+      <div class="flex flex-wrap items-center gap-2">
+        <label class="text-xs text-muted-foreground" for={`inbox-folder-${deviceId}`}>
+          {t('print-queue.inbox.folderLabel')}
+        </label>
+        <Input
+          id={`inbox-folder-${deviceId}`}
+          class="max-w-xs"
+          value={draft ?? (inbox.custom ? inbox.folder : '')}
+          placeholder={inbox.custom ? '' : inbox.folder}
+          oninput={(event: Event) => (draft = (event.currentTarget as HTMLInputElement).value)}
+        />
+        <Button size="sm" variant="secondary" disabled={busy || draft === undefined} onclick={() => void saveFolder()}>
+          {t('print-queue.inbox.folderSave')}
+        </Button>
+      </div>
+      <p class="text-xs text-muted-foreground">{t('print-queue.inbox.folderHint')}</p>
     {/if}
   </div>
 {/if}

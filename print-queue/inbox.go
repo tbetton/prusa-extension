@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"io/fs"
 	"net/http"
 	"path"
 	"slices"
@@ -44,7 +45,10 @@ type inboxView struct {
 	Storage string      `json:"storage"`
 	Folder  string      `json:"folder"`
 	Auto    bool        `json:"auto"`
-	Items   []inboxItem `json:"items"`
+	// Custom is true when a person chose the folder, and false when it was
+	// found from the printer's name.
+	Custom bool        `json:"custom"`
+	Items  []inboxItem `json:"items"`
 }
 
 // printableFile says whether a file name is one a printer prints.
@@ -108,36 +112,74 @@ func (m *module) listFolder(ctx context.Context, storage, folder string) ([]stor
 	return all, nil
 }
 
-// inboxScan reads the folder of one printer. A missing inbox folder, or no
-// folder for the printer yet, is an empty inbox and not a failure.
-func (m *module) inboxScan(ctx context.Context, device deviceapi.Device, store *Store, now time.Time) (inboxView, error) {
+// findInboxFolder looks for the folder named after a printer, first under the
+// inbox folder and then at the root of the storage. It answers an empty path
+// when there is none.
+func (m *module) findInboxFolder(ctx context.Context, device deviceapi.Device) string {
 	label := folderLabel(device)
-	view := inboxView{Storage: m.inboxStorage, Folder: path.Join(m.inboxFolder, label), Items: []inboxItem{}}
-	_, view.Auto = store.AutoAddOf(device.ID)
 
-	roots, err := m.list(ctx, m.inboxStorage, m.inboxFolder)
-	if err != nil {
-		return view, nil //nolint:nilerr // the folder does not exist until the first upload
-	}
+	for _, base := range []string{m.inboxFolder, ""} {
+		entries, err := m.list(ctx, m.inboxStorage, base)
+		if err != nil {
+			continue
+		}
 
-	dir := ""
-
-	for _, entry := range roots {
-		if entry.Dir && sameFolder(entry.Name, label, device.ID) {
-			dir = entry.Name
-
-			break
+		for _, entry := range entries {
+			if entry.Dir && sameFolder(entry.Name, label, device.ID) {
+				return path.Join(base, entry.Name)
+			}
 		}
 	}
 
-	if dir == "" {
+	return ""
+}
+
+// cleanInboxFolder checks a folder a person typed. An empty answer asks for
+// the folder to be found from the printer's name again.
+func cleanInboxFolder(folder string) (string, bool) {
+	folder = strings.Trim(strings.TrimSpace(folder), "/")
+	if folder == "" {
+		return "", true
+	}
+
+	if !fs.ValidPath(folder) || strings.Contains(folder, "\\") || len(folder) > 512 {
+		return "", false
+	}
+
+	for _, part := range strings.Split(folder, "/") {
+		if strings.HasPrefix(part, ".") {
+			return "", false
+		}
+	}
+
+	return folder, true
+}
+
+// inboxScan reads the folder of one printer. A folder that does not exist yet
+// is an empty inbox and not a failure.
+func (m *module) inboxScan(ctx context.Context, device deviceapi.Device, store *Store, now time.Time) (inboxView, error) {
+	view := inboxView{Storage: m.inboxStorage, Items: []inboxItem{}}
+	_, view.Auto = store.AutoAddOf(device.ID)
+
+	view.Folder = store.InboxFolderOf(device.ID)
+	view.Custom = view.Folder != ""
+
+	if !view.Custom {
+		view.Folder = m.findInboxFolder(ctx, device)
+	}
+
+	if view.Folder == "" {
+		view.Folder = path.Join(m.inboxFolder, folderLabel(device))
+
 		return view, nil
 	}
 
-	view.Folder = path.Join(m.inboxFolder, dir)
-
 	files, err := m.list(ctx, m.inboxStorage, view.Folder)
 	if err != nil {
+		if view.Custom {
+			return view, nil //nolint:nilerr // the folder may not exist until the first upload
+		}
+
 		return view, err
 	}
 
@@ -308,6 +350,30 @@ func (m *module) registerInbox(mux *http.ServeMux) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
+	mux.HandleFunc("PUT /devices/{id}/inbox-folder", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Folder string `json:"folder"`
+		}
+
+		if !decode(w, r, &body) {
+			return
+		}
+
+		folder, valid := cleanInboxFolder(body.Folder)
+		if !valid {
+			refuse(w, r, BadRequest.New("folder must be a folder of the storage"))
+
+			return
+		}
+
+		store, device, ok := m.inboxDevice(w, r)
+		if !ok {
+			return
+		}
+
+		m.writeResult(w, r, store.SetInboxFolder(device.ID, folder))
+	})
+
 	mux.HandleFunc("PUT /devices/{id}/inbox-auto", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Enabled bool `json:"enabled"`
@@ -402,6 +468,35 @@ func (s *Store) ForgetHandled(prefix string, keep map[string]bool) error {
 				delete(data.Handled, key)
 			}
 		}
+
+		return nil
+	})
+}
+
+// InboxFolderOf answers the folder a person chose for a printer's uploads, or
+// an empty path when none was chosen.
+func (s *Store) InboxFolderOf(deviceID string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.data.InboxFolders[deviceID]
+}
+
+// SetInboxFolder chooses the folder of a printer's uploads. An empty folder
+// goes back to the folder named after the printer.
+func (s *Store) SetInboxFolder(deviceID, folder string) error {
+	return s.update(func(data *snapshot) error {
+		if folder == "" {
+			delete(data.InboxFolders, deviceID)
+
+			return nil
+		}
+
+		if data.InboxFolders == nil {
+			data.InboxFolders = map[string]string{}
+		}
+
+		data.InboxFolders[deviceID] = folder
 
 		return nil
 	})

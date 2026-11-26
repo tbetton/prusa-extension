@@ -116,6 +116,8 @@ type snapshot struct {
 	// Handled is the modification time of each inbox file that was added to a
 	// queue or ignored, by storage and path.
 	Handled map[string]int64 `json:"inbox_handled,omitempty"`
+	// InboxFolders is the folder a person chose for the uploads of a printer.
+	InboxFolders map[string]string `json:"inbox_folders,omitempty"`
 }
 
 func (data *snapshot) nextQueued(deviceID string, now time.Time) *Job {
@@ -213,6 +215,7 @@ func (s *Store) update(change func(*snapshot) error) error {
 		Jobs: slices.Clone(s.data.Jobs), Paused: maps.Clone(s.data.Paused),
 		Cursor: s.data.Cursor, UnconfirmedReady: maps.Clone(s.data.UnconfirmedReady),
 		AutoAdd: maps.Clone(s.data.AutoAdd), Handled: maps.Clone(s.data.Handled),
+		InboxFolders: maps.Clone(s.data.InboxFolders),
 	}
 	if err := change(&next); err != nil {
 		return err

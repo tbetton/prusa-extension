@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "print-queue",
-    "version": "0.3.0",
+    "version": "0.3.1",
     "description": "A queue of prints for each printer. Every path is relative to the mount the host assigns."
   },
   "components": {
@@ -109,18 +109,77 @@
             "items": {
               "$ref": "#/components/schemas/InboxItem"
             }
+          },
+          "custom": {
+            "type": "boolean"
           }
         },
         "required": [
           "storage",
           "folder",
           "auto",
-          "items"
+          "items",
+          "custom"
         ]
       }
     }
   },
   "paths": {
+    "/devices/{id}/inbox-folder": {
+      "put": {
+        "operationId": "set-inbox-folder",
+        "summary": "Choose the folder of a printer's uploads",
+        "description": "Requires permission to operate the printer. The folder is relative to the inbox storage. An empty folder goes back to the folder named after the printer, under the inbox folder or at the root of the storage.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "folder": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "folder"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "The folder is saved."
+          },
+          "400": {
+            "description": "The folder is not valid."
+          },
+          "403": {
+            "description": "The caller cannot operate the printer."
+          },
+          "404": {
+            "description": "The printer is unavailable."
+          },
+          "500": {
+            "description": "The setting could not be saved."
+          },
+          "503": {
+            "description": "The module is starting."
+          }
+        }
+      }
+    },
     "/devices/{id}/inbox": {
       "get": {
         "operationId": "get-printer-inbox",

@@ -168,6 +168,8 @@ export interface Inbox {
   storage: string;
   folder: string;
   auto: boolean;
+  /** True when a person chose the folder, false when it was found from the printer's name. */
+  custom: boolean;
   items: InboxItem[];
 }
 
@@ -176,6 +178,9 @@ export const getInbox = (deviceId: string, signal?: AbortSignal): Promise<Inbox>
 
 export const dismissInboxItem = (deviceId: string, path: string): Promise<void> =>
   call('POST', `/devices/${encodeURIComponent(deviceId)}/inbox/dismiss`, { path });
+
+export const setInboxFolder = (deviceId: string, folder: string): Promise<void> =>
+  call('PUT', `/devices/${encodeURIComponent(deviceId)}/inbox-folder`, { folder });
 
 export const setInboxAuto = (deviceId: string, enabled: boolean): Promise<void> =>
   call('PUT', `/devices/${encodeURIComponent(deviceId)}/inbox-auto`, { enabled });
