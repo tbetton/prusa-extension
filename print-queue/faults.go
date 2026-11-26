@@ -86,6 +86,14 @@ var (
 		fault.ShowDetail,
 	))
 
+	// StorageUnavailable is a storage the module could not read.
+	StorageUnavailable = fault.Register(faultDomain, "STORAGE_UNAVAILABLE", http.StatusServiceUnavailable, fault.Document(
+		"The storage could not be read",
+		"Check the storage and try again.",
+		fault.RetryAllowed,
+		fault.ShowDetail,
+	))
+
 	// StoreFailed is a queue the module could not save.
 	StoreFailed = fault.Register(faultDomain, "STORE_FAILED", http.StatusInternalServerError, fault.Document(
 		"The queue could not be saved",

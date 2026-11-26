@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"math"
 	"net/http"
 	"os"
@@ -33,7 +34,7 @@ import (
 
 const (
 	name    = "print-queue"
-	release = extension.Version("0.2.0")
+	release = extension.Version("0.3.2")
 )
 
 // Settings is what an operator writes under this instance's config block. The
@@ -43,6 +44,8 @@ type Settings struct {
 	StartTimeoutMinutes int    `json:"start_timeout_minutes"`
 	PrinterFolder       string `json:"printer_folder"`
 	KeepHistory         int    `json:"keep_history"`
+	InboxStorage        string `json:"inbox_storage"`
+	InboxFolder         string `json:"inbox_folder"`
 }
 
 func (s Settings) withDefaults() Settings {
@@ -57,6 +60,16 @@ func (s Settings) withDefaults() Settings {
 	s.PrinterFolder = strings.Trim(s.PrinterFolder, "/")
 	if s.PrinterFolder == "" {
 		s.PrinterFolder = "usb"
+	}
+
+	s.InboxStorage = strings.TrimSpace(s.InboxStorage)
+	if s.InboxStorage == "" {
+		s.InboxStorage = "local"
+	}
+
+	s.InboxFolder = strings.Trim(strings.TrimSpace(s.InboxFolder), "/")
+	if s.InboxFolder == "" {
+		s.InboxFolder = "print-queue"
 	}
 
 	if s.KeepHistory < 0 {
@@ -86,6 +99,13 @@ type module struct {
 	files     *storageapi.Client
 	scheduler *Scheduler
 	ctx       context.Context
+
+	// The storage and the folder PrusaSlicer's uploads are saved in, one
+	// folder for each printer under it.
+	inboxStorage string
+	inboxFolder  string
+	list         func(ctx context.Context, storage, folder string) ([]storageapi.ListEntry, error)
+	inboxLogged  time.Time
 }
 
 func logf(format string, args ...any) {
@@ -124,6 +144,7 @@ func run() error {
 	m.access = accessapi.NewClient(conn)
 	m.devices = deviceapi.NewClient(conn)
 	m.files = storageapi.NewClient(conn)
+	m.list = m.listFolder
 
 	logf("%s is serving on stdio as pid %d", release, os.Getpid())
 
@@ -158,6 +179,10 @@ func (m *module) methods() wirerpc.Methods {
 // configure opens the store in the data directory and starts the loop.
 func (m *module) configure(_ context.Context, sent Settings, grants wirerpc.Grants) error {
 	settings := sent.withDefaults()
+	if !fs.ValidPath(settings.InboxFolder) || settings.InboxFolder == "." ||
+		strings.ContainsAny(settings.InboxFolder, "\\") || strings.Contains(settings.InboxStorage, "/") {
+		return errors.New("print-queue: inbox_folder must be a folder of the storage and inbox_storage a storage name")
+	}
 	if int64(settings.PollSeconds) > math.MaxInt64/int64(3*time.Second) ||
 		int64(settings.StartTimeoutMinutes) > math.MaxInt64/int64(time.Minute) {
 		return errors.New("print-queue: a configured duration is too long")
@@ -180,6 +205,8 @@ func (m *module) configure(_ context.Context, sent Settings, grants wirerpc.Gran
 	}
 
 	m.store = store
+	m.inboxStorage = settings.InboxStorage
+	m.inboxFolder = settings.InboxFolder
 	m.scheduler = &Scheduler{
 		store:        store,
 		fleet:        m.devices,
@@ -207,6 +234,7 @@ func (m *module) loop(every time.Duration) {
 		case <-ticker.C:
 			ctx, cancel := context.WithTimeout(m.ctx, every*3)
 			m.scheduler.Tick(ctx)
+			m.autoAdd(ctx)
 			cancel()
 		}
 	}
@@ -288,6 +316,8 @@ func (m *module) routes() http.Handler {
 	})
 
 	mux.HandleFunc("POST /devices/{id}/ready", m.markReady)
+
+	m.registerInbox(mux)
 
 	mux.HandleFunc("POST /jobs", func(w http.ResponseWriter, r *http.Request) {
 		store := m.ready(w, r)

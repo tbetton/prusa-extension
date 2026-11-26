@@ -7,6 +7,30 @@ Write the entry in the same change as the code. One bullet per behaviour a
 person outside this repository can observe: a route, a setting, a screen, a
 refusal. Name the route and the setting key, never a function or a file.
 
+## 0.3.2
+
+- Add **Set up PrusaSlicer uploads** to **From PrusaSlicer**. It asks the PrusaSlicer 2 Connector, when it is installed, to save the printer's uploads in `print-queue/<printer name>` of the storage `inbox_storage`, and Print Queue reads that folder. It needs the permission to change **Save to storage** on the connector.
+- Read the folder the connector already uses for a printer, and follow it when it changes, instead of the **Folder** field. The field stays for a server without the connector.
+
+## 0.3.1
+
+- Find the folder of a printer's uploads by itself: the folder named after the printer, under `inbox_folder` or at the root of the storage. A folder with another name is typed in the new **Folder** field of **From PrusaSlicer**.
+- Set that folder with `PUT /devices/{id}/inbox-folder`, which needs permission to operate the printer. An empty folder goes back to the automatic one.
+
+## 0.3.0
+
+- Show **From PrusaSlicer** on each printer: the files that the PrusaSlicer 2 Connector saved in the folder named after the printer, under the `inbox_folder` of the storage `inbox_storage`. **Add** puts a file in the printer's queue and **Ignore** hides it. A file saved again under the same name is offered again.
+- Add the switch **Add new uploads to the queue by themselves** to that block. The files join the queue as the person who turned the switch on, and only while that person may still operate the printer and read the storage.
+- Read the inbox with `GET /devices/{id}/inbox`, ignore a file with `POST /devices/{id}/inbox/dismiss` and set the switch with `PUT /devices/{id}/inbox-auto`. Each needs permission to operate the printer.
+- Add the settings `inbox_storage` (default `local`) and `inbox_folder` (default `print-queue`).
+- Require the `core-storage.list` capability, to read the folders of the inbox. Approve it when you upgrade.
+- Rewrite the **PrusaSlicer** page under Settings, Extensions, Print Queue for the per-printer folders.
+
+## 0.2.2
+
+- Add a **Server storage** tab next to **Printer drive** in **Add a file**. It lists the storages of the server, so a file that the PrusaSlicer 2 Connector saved there can be queued without opening the storage.
+- Show a **PrusaSlicer** page under Settings, Extensions, Print Queue. It explains how to send a file from PrusaSlicer 2 with the PrusaSlicer 2 Connector extension, which Print Queue does not require.
+
 ## 0.2.0
 
 - Make Print Queue available for installation from the stable channel in the Prusa Connect Local Extensions catalogue.

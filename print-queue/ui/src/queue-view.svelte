@@ -34,6 +34,7 @@
   } from './api';
   import { heldHost } from './host';
   import { formatClock, formatDate, formatDuration, formatNumber, queueErrorText } from './i18n';
+  import Inbox from './inbox.svelte';
   import PrinterFiles from './printer-files.svelte';
   import {
     CHANGEOVER_MS,
@@ -283,11 +284,14 @@
     });
   };
 
-  /** Printer paths already waiting or printing, with how many times. */
+  /** Files already waiting or printing, with how many times, by `storage:path`. */
   const queuedPaths = (id: string): Record<string, number> => {
     const counts: Record<string, number> = {};
     for (const job of jobsOf(id)) {
-      if (job.storage === '' && !isFinished(job)) counts[job.path] = (counts[job.path] ?? 0) + 1;
+      if (!isFinished(job)) {
+        const key = `${job.storage}:${job.path}`;
+        counts[key] = (counts[key] ?? 0) + 1;
+      }
     }
     return counts;
   };
@@ -488,6 +492,7 @@
             {/if}
           </CardHeader>
           <CardContent>
+            <Inbox deviceId={printer} onchange={() => void refresh()} />
             {#if jobs.length > 0}
               <div class="mb-3 flex flex-col gap-1">
                 <Timeline {slots} {now} />

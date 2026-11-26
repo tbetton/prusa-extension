@@ -9,6 +9,7 @@ import { holdHost } from './host';
 import Page from './page.svelte';
 import DeviceTab from './device-tab.svelte';
 import FileAction from './file-action';
+import HowTo from './how-to.svelte';
 import './styles.css';
 
 export default defineModule((host) => {
@@ -32,4 +33,7 @@ export default defineModule((host) => {
   host.register.page('print-queue', Page);
   host.register.deviceTab('print-queue', DeviceTab);
   host.register.fileAction('print-queue', FileAction);
+  // How to send a file from PrusaSlicer 2, on this module's page under
+  // Settings, Extensions.
+  host.register.settings('how-to', HowTo);
 });

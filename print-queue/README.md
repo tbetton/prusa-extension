@@ -9,6 +9,17 @@ Print Queue manages a separate queue for each printer. When a printer reports **
 - See the current print and its progress, including prints started outside the extension.
 - The extension stores the queue in `queue.json` in its data directory.
 
+## Send a file from PrusaSlicer
+
+Print Queue does not require another extension. The PrusaSlicer 2 Connector extension published by Prusa lets PrusaSlicer 2.4 and later send a file to a printer of the server as to a printer with PrusaLink. PrusaSlicer shows only **Upload** and **Upload and Print** for that kind of host, never a queue.
+
+1. Install the PrusaSlicer 2 Connector, add the printer in PrusaSlicer as a PrusaLink host with an API key, and turn on **Save to storage** on the connector's card for the printer.
+2. On the printer's card in Print Queue, press **Set up PrusaSlicer uploads**. It turns on **Save to storage** on the connector for that printer, with the storage `local` and the folder `print-queue/<printer name>`. Print Queue then reads that folder, and follows it if you change it on the connector's card. Without the connector, type the folder in the **Folder** field.
+3. Press **Upload** in PrusaSlicer, not **Upload and Print**, which starts the file at once.
+4. On the printer's card in Print Queue, **From PrusaSlicer** lists the new files. Press **Add** to queue one, or turn on **Add new uploads to the queue by themselves**. The files then join the queue as the person who turned the switch on, while that person may operate the printer and read the storage.
+
+**Settings → Extensions → Print Queue → PrusaSlicer** lists the steps. Change the storage and the folder with `inbox_storage` and `inbox_folder`. **Add a file** also lists the storages of the server.
+
 The extension displays its interface, dates, and error messages in English.
 
 ## Build and install
@@ -51,4 +62,6 @@ Open **Settings → Extensions → Print Queue**.
 | `poll_seconds` | 10 | How often the extension checks the printers, in seconds |
 | `start_timeout_minutes` | 30 | Maximum time between dispatch and the start of a print, in minutes |
 | `printer_folder` | usb | Destination folder on the printer |
+| `inbox_storage` | local | Storage where the PrusaSlicer 2 Connector saves uploads |
+| `inbox_folder` | print-queue | Folder of that storage with one folder for each printer |
 | `keep_history` | 20 | Number of finished jobs retained per printer |

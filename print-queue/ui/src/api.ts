@@ -113,6 +113,33 @@ export const listPrinterFiles = async (
   }
 };
 
+/** One storage of the server, and one entry of a folder of a storage. */
+export type StorageInfo = components['schemas']['Storage'];
+export type StorageFile = components['schemas']['StorageEntry'];
+
+const asQueueError = (error: unknown): unknown =>
+  error instanceof ApiError ? new QueueError(error.status, error.code, error.problem?.detail) : error;
+
+/** The storages of the server the person may browse. */
+export const listStorages = async (): Promise<StorageInfo[]> => {
+  try {
+    const { items } = await heldHost().client.listStorages({});
+    return items ?? [];
+  } catch (error) {
+    throw asQueueError(error);
+  }
+};
+
+/** One folder of a storage; an empty path is its root. */
+export const listStorageFolder = async (storage: string, path: string): Promise<StorageFile[]> => {
+  try {
+    const { items } = await heldHost().client.listStorageFiles({ path: { storage }, query: { path } });
+    return items ?? [];
+  } catch (error) {
+    throw asQueueError(error);
+  }
+};
+
 export const removeJob = (id: string): Promise<void> => call('DELETE', `/jobs/${id}`);
 
 export const moveJob = (id: string, direction: 'up' | 'down'): Promise<void> =>
@@ -128,6 +155,89 @@ export const clearFinished = (deviceId: string | undefined): Promise<void> =>
 
 export const setPaused = (deviceId: string, paused: boolean): Promise<void> =>
   call('PUT', `/devices/${deviceId}/paused`, { paused });
+
+/** One file PrusaSlicer left in a printer's folder, and what the folder says. */
+export interface InboxItem {
+  name: string;
+  path: string;
+  size: number;
+  modified: string;
+}
+
+export interface Inbox {
+  storage: string;
+  folder: string;
+  auto: boolean;
+  /** True when a person chose the folder, false when it was found from the printer's name. */
+  custom: boolean;
+  items: InboxItem[];
+}
+
+export const getInbox = (deviceId: string, signal?: AbortSignal): Promise<Inbox> =>
+  call<Inbox>('GET', `/devices/${encodeURIComponent(deviceId)}/inbox`, undefined, signal);
+
+export const dismissInboxItem = (deviceId: string, path: string): Promise<void> =>
+  call('POST', `/devices/${encodeURIComponent(deviceId)}/inbox/dismiss`, { path });
+
+// The PrusaSlicer 2 Connector is another extension, optional here. Its route
+// says where it saves the uploads of one printer, and the page asks it with
+// the session cookie it holds, as for this module's own routes.
+const CONNECTOR_BASE = BASE.replace(/[^/]+$/u, 'com.github.aux.prusa3d.prusaslicer2-connector');
+
+/** Where the connector saves one printer's uploads. */
+export interface ConnectorKeep {
+  storage: string;
+  folder?: string;
+  on: boolean;
+  may_change: boolean;
+}
+
+/** A refusal of the connector, in the words it wrote for a person. */
+export class ConnectorError extends Error {}
+
+/** The connector's setting for a printer, or undefined when it is not installed. */
+export const getConnectorKeep = async (
+  deviceId: string,
+  signal?: AbortSignal,
+): Promise<ConnectorKeep | undefined> => {
+  try {
+    const response = await fetch(`${CONNECTOR_BASE}/printers/${encodeURIComponent(deviceId)}/keep`, {
+      credentials: 'same-origin',
+      signal: signal ?? null,
+    });
+    if (!response.ok) return undefined;
+
+    return (await response.json()) as ConnectorKeep;
+  } catch {
+    return undefined;
+  }
+};
+
+/** Make the connector save the uploads of a printer in a folder of a storage. */
+export const setConnectorKeep = async (deviceId: string, storage: string, folder: string): Promise<void> => {
+  const response = await fetch(`${CONNECTOR_BASE}/printers/${encodeURIComponent(deviceId)}/keep`, {
+    method: 'PUT',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ storage, folder }),
+  });
+  if (response.ok) return;
+
+  let message = String(response.status);
+  try {
+    const problem = (await response.json()) as { message?: unknown } | null;
+    if (typeof problem?.message === 'string') message = problem.message;
+  } catch {
+    // keep the status
+  }
+  throw new ConnectorError(message);
+};
+
+export const setInboxFolder = (deviceId: string, folder: string): Promise<void> =>
+  call('PUT', `/devices/${encodeURIComponent(deviceId)}/inbox-folder`, { folder });
+
+export const setInboxAuto = (deviceId: string, enabled: boolean): Promise<void> =>
+  call('PUT', `/devices/${encodeURIComponent(deviceId)}/inbox-auto`, { enabled });
 
 export const markPrinterReady = (deviceId: string): Promise<void> =>
   call('POST', `/devices/${encodeURIComponent(deviceId)}/ready`, { plate_empty: true });
