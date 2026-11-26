@@ -65,6 +65,8 @@ var (
 	))
 )
 
+// mustDomain builds the fault domain at start-up, and stops the process when
+// the name is not valid, since nothing can be refused properly without it.
 func mustDomain(name string) fault.Domain {
 	domain, err := fault.NewDomain(name)
 	if err != nil {

@@ -44,6 +44,8 @@ type Settings struct {
 	CustomURLs   string `json:"custom_urls"`
 }
 
+// withDefaults fills the settings the operator left out, so the rest of the
+// code never sees an empty address or a zero refresh time.
 func (s Settings) withDefaults() Settings {
 	if strings.TrimSpace(s.CatalogueURL) == "" {
 		s.CatalogueURL = defaultCatalogueURL
@@ -63,6 +65,7 @@ func (s Settings) withDefaults() Settings {
 //go:embed openapi.json
 var openAPI []byte
 
+// main runs the module and exits with its error, if any.
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "%s: %v\n", name, err)
@@ -85,10 +88,14 @@ type module struct {
 	client     *http.Client
 }
 
+// logf writes a line to the module's log, which the host keeps with its own.
 func logf(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, name+": "+format+"\n", args...)
 }
 
+// run announces the protocol on standard output, builds the module and serves
+// the host's calls until the process is asked to stop. The catalogue is loaded
+// later, when the host sends the settings (see configure).
 func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -128,6 +135,8 @@ func run() error {
 	return nil
 }
 
+// methods lists the calls the host may make to this module: its description,
+// its settings, the request to stop, and the HTTP routes.
 func (m *module) methods() wirerpc.Methods {
 	return wirerpc.Methods{
 		wirerpc.MethodInfo: func(context.Context, wirerpc.Call) (any, error) {
@@ -229,6 +238,8 @@ type status struct {
 	Error      string         `json:"error,omitempty"`
 }
 
+// status answers what the Settings page shows: whether the catalogue is ready,
+// its version, how many presets each source gave, and the last error.
 func (m *module) status() status {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -278,6 +289,8 @@ type candidate struct {
 	Variants []string `json:"variants"`
 }
 
+// bundleBody is the body of POST /bundle: the printer the bundle forces and
+// one request for each tool's spool.
 type bundleBody struct {
 	Printer   string    `json:"printer"`
 	Filaments []Request `json:"filaments"`
@@ -323,13 +336,20 @@ func fitFor(w http.ResponseWriter, r *http.Request, c *Catalogue, printer string
 	return func(base string) bool { return c.Fits(base, printer) }, true
 }
 
+// routes builds the HTTP routes of the module. Most of them read the catalogue
+// and answer 503 until it is loaded. /choices keeps a person's choices for a
+// printer, because the host reserves /state for itself.
 func (m *module) routes() http.Handler {
 	mux := http.NewServeMux()
+
+	// The state of the catalogue: ready or not, its version and its sources.
 
 	mux.HandleFunc("GET /catalogue", func(w http.ResponseWriter, _ *http.Request) {
 		answer(w, http.StatusOK, m.status())
 	})
 
+	// Downloads the sources again, in the background. It answers at once with
+	// the status, and only one download runs at a time.
 	mux.HandleFunc("POST /catalogue/refresh", func(w http.ResponseWriter, r *http.Request) {
 		m.mu.Lock()
 		if !m.configured {
@@ -489,6 +509,7 @@ func (m *module) routes() http.Handler {
 		_, _ = w.Write(raw)
 	})
 
+	// Saves what the person chose, for the next visit of the printer's tab.
 	mux.HandleFunc("POST /choices", func(w http.ResponseWriter, r *http.Request) {
 		path, ok := m.statePath(w, r)
 		if !ok {
@@ -530,6 +551,8 @@ func (m *module) routes() http.Handler {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
+	// Writes the Config Bundle (.ini) for the printer and the spools, and answers
+	// it as a file to import in PrusaSlicer.
 	mux.HandleFunc("POST /bundle", func(w http.ResponseWriter, r *http.Request) {
 		c := m.ready(w, r)
 		if c == nil {
@@ -590,6 +613,7 @@ func (m *module) statePath(w http.ResponseWriter, r *http.Request) (string, bool
 	return filepath.Join(dir, "state", device+".json"), true
 }
 
+// nonNil answers an empty list in place of nil, so the JSON has [] and not null.
 func nonNil(list []string) []string {
 	if list == nil {
 		return []string{}
@@ -609,6 +633,8 @@ func containsAll(text string, words []string) bool {
 	return true
 }
 
+// decode reads a JSON body of at most 64 KiB, and refuses the request itself
+// when it cannot.
 func decode(w http.ResponseWriter, r *http.Request, into any) bool {
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(into); err != nil {
 		refuse(w, r, BadRequest.New("the body is not the JSON this route reads: "+err.Error()))
@@ -619,6 +645,7 @@ func decode(w http.ResponseWriter, r *http.Request, into any) bool {
 	return true
 }
 
+// answer writes a JSON body with a status.
 func answer(w http.ResponseWriter, code int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
@@ -626,6 +653,7 @@ func answer(w http.ResponseWriter, code int, body any) {
 	_ = json.NewEncoder(w).Encode(body)
 }
 
+// stdio is the host's channel: standard input and output of the process.
 type stdio struct{}
 
 func (stdio) Read(p []byte) (int, error)  { return os.Stdin.Read(p) }

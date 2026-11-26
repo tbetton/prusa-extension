@@ -1,3 +1,9 @@
+// Marking a printer ready by hand.
+//
+// A finished print leaves the plate full, so the queue never starts the next
+// job by itself on a printer that only finished. A person confirms the plate is
+// empty, and markReady then sends the printer's own ready command. The next job
+// starts only once the printer itself reports READY.
 package main
 
 import (
@@ -9,6 +15,7 @@ import (
 	"github.com/prusa3d/prusa-connect/sdk/deviceapi"
 )
 
+// readyVerb is the command that puts a printer in the READY state.
 const readyVerb = "core.command.set_printer_ready"
 
 // Retain the old plate_ready marker so upgrading cannot dispatch a job from
@@ -17,6 +24,8 @@ type readyMarker struct {
 	Seen bool `json:"seen"`
 }
 
+// sendReady asks the printer to become READY and checks that it accepted the
+// command as written, with nothing ignored or substituted.
 func (sc *Scheduler) sendReady(ctx context.Context, id string) error {
 	result, err := sc.command(ctx, deviceapi.CommandParams{ID: id, Verb: readyVerb})
 	if err != nil {
@@ -28,6 +37,10 @@ func (sc *Scheduler) sendReady(ctx context.Context, id string) error {
 	return nil
 }
 
+// markReady is POST /devices/{id}/ready. It needs the person to confirm the
+// plate is empty and to be allowed to operate the printer. It refuses unless
+// the printer is connected, free of dialogs and issues, in a state that can
+// become ready, and not running or tracking another print.
 func (m *module) markReady(w http.ResponseWriter, r *http.Request) {
 	if m.ready(w, r) == nil {
 		return

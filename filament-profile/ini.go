@@ -333,6 +333,9 @@ func (c *Catalogue) Flatten(name string) (keys []string, vals map[string]string,
 	return keys, vals, nil
 }
 
+// fold flattens one preset: it first takes the keys of every preset it inherits
+// from (the parents named in `inherits`, left to right), then its own, which
+// win. `depth` stops a loop of inheritance from running forever.
 func (c *Catalogue) fold(sections map[string]*Section, name string, depth int, keys *[]string, vals map[string]string) error {
 	if depth > maxDepth {
 		return fmt.Errorf("%q inherits too deeply", name)

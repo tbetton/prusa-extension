@@ -16,6 +16,7 @@ const BASE = (() => {
 /** The Materials extension answers which spool is on which tool. */
 const MATERIALS = BASE.replace(/\/modules\/[^/]+$/u, '/modules/com.github.aux.prusa3d.materials');
 
+/** A refusal of one of the module's routes: the HTTP status and the fault code. */
 export class ProfileError extends Error {
   constructor(
     readonly status: number,
@@ -26,6 +27,7 @@ export class ProfileError extends Error {
   }
 }
 
+/** Reads a refusal's problem document, and never throws. */
 const refusal = async (response: Response): Promise<ProfileError> => {
   try {
     const problem = (await response.json()) as { code?: unknown; detail?: unknown } | null;
@@ -39,6 +41,7 @@ const refusal = async (response: Response): Promise<ProfileError> => {
   }
 };
 
+/** One request to a module (this one or Materials), with the session cookie. A refusal throws. */
 const send = async (
   base: string,
   method: string,
@@ -58,6 +61,7 @@ const send = async (
   return response;
 };
 
+/** `send`, and the answer read as JSON. */
 const json = async <T>(
   base: string,
   method: string,
@@ -81,6 +85,7 @@ export interface Tool {
   nozzle: { diameter_mm: number; high_flow: boolean; hardened: boolean; high_temp?: boolean };
 }
 
+/** The tools as the Materials extension reports them: brand, product, colour. */
 const listToolsFromMaterials = async (deviceId: string, signal?: AbortSignal): Promise<Tool[]> =>
   (
     await json<{ tools: Tool[] }>(
@@ -94,6 +99,7 @@ const listToolsFromMaterials = async (deviceId: string, signal?: AbortSignal): P
 
 type DeviceTool = components['schemas']['DeviceTool'];
 
+/** The tools as the printer reports them: only the nozzle and the type of material. */
 const listToolsFromPrinter = async (deviceId: string, signal?: AbortSignal): Promise<Tool[]> => {
   const host = heldHost();
   const device = await host.client.getDevice({ path: { device_id: deviceId } }, signal ?? host.signal);
@@ -124,6 +130,7 @@ export const listTools = async (
   }
 };
 
+/** The state of the module's catalogue of presets. */
 export interface Status {
   ready: boolean;
   refreshing: boolean;
@@ -137,6 +144,7 @@ export interface Status {
   error?: string;
 }
 
+/** One preset offered for a spool. */
 export interface Candidate {
   preset: string;
   score?: number;
@@ -159,6 +167,7 @@ export interface Printer {
   high_flow: boolean;
 }
 
+/** What the bundle needs to write the profile of one tool. */
 export interface Request {
   name: string;
   vendor?: string;
@@ -203,12 +212,15 @@ export const getMaterial = async (uuid: string, signal?: AbortSignal): Promise<P
   return keep;
 };
 
+/** The state of the catalogue: ready or not, its version and its sources. */
 export const getCatalogue = (signal?: AbortSignal): Promise<Status> =>
   json<Status>(BASE, 'GET', '/catalogue', undefined, signal);
 
+/** Starts a new download of the sources, and answers the state at once. */
 export const refreshCatalogue = (): Promise<Status> =>
   json<Status>(BASE, 'POST', '/catalogue/refresh');
 
+/** The presets nearest to a spool by brand, name and type, for a printer when one is named. */
 export const matchFilament = async (
   brand: string,
   name: string,
@@ -224,6 +236,7 @@ export const matchFilament = async (
   ).matches;
 };
 
+/** A search over the presets by name, for a spool the match missed. */
 export const searchPresets = async (
   q: string,
   printer: string,
@@ -292,6 +305,7 @@ export const EDITABLE = [
   'filament_cost',
 ] as const;
 
+/** The settings a profile would be written with, for a preset and a printer. */
 export const getSettings = (
   base: string,
   printer: string,
@@ -315,14 +329,17 @@ export interface SavedTool {
   useProperties?: boolean;
 }
 
+/** Everything kept of one printer's tab. */
 export interface SavedState {
   printer?: string;
   tools?: Record<string, SavedTool>;
 }
 
+/** Reads what was kept of a printer's tab. */
 export const getState = (deviceId: string, signal?: AbortSignal): Promise<SavedState> =>
   json<SavedState>(BASE, 'GET', `/choices?device=${encodeURIComponent(deviceId)}`, undefined, signal);
 
+/** Keeps what the person chose on a printer's tab. */
 export const putState = async (deviceId: string, state: SavedState): Promise<void> => {
   await send(BASE, 'POST', `/choices?device=${encodeURIComponent(deviceId)}`, state);
 };

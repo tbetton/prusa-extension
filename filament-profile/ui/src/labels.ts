@@ -10,6 +10,7 @@ export interface ToolName {
   slot?: number;
 }
 
+/** The number to show for a tool id, counted from 1 (see the note above). */
 export const toolName = (id: string, single: boolean): ToolName => {
   const [head = '0', slot] = id.split('.');
   if (slot !== undefined) return { tool: Number(head) + 1, slot: Number(slot) + 1 };
@@ -17,6 +18,7 @@ export const toolName = (id: string, single: boolean): ToolName => {
   return single ? {} : { tool: Number(head) + 1 };
 };
 
+/** An id such as "1.2" as numbers: [1, 2]. */
 const parts = (id: string): number[] => id.split('.').map((part) => Number(part));
 
 /** Orders tool ids as the printer does: by tool, then by slot, numerically. */

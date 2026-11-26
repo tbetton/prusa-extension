@@ -31,6 +31,7 @@ const (
 // version is a release such as 2.5.16, ordered number by number.
 type version []int
 
+// parseVersion reads a dotted version, and says false for anything else.
 func parseVersion(s string) (version, bool) {
 	var v version
 
@@ -46,6 +47,7 @@ func parseVersion(s string) (version, bool) {
 	return v, len(v) > 0
 }
 
+// newerThan compares two versions number by number, a missing number being 0.
 func (v version) newerThan(o version) bool {
 	for i := range max(len(v), len(o)) {
 		a, b := 0, 0

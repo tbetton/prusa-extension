@@ -1,5 +1,7 @@
 # Filament Profile for Prusa Connect Local
 
+To understand or change the code, read [ARCHITECTURE.md](ARCHITECTURE.md).
+
 Filament Profile writes PrusaSlicer **2.9** filament profiles for the spools loaded on a printer. It adds a **Filament Profile** tab to a printer's page, next to the tools. For each tool it proposes the nearest preset of the profiles Prusa Research publishes, and writes one Config Bundle (`.ini`) you import in PrusaSlicer.
 
 1. Assign a material to each tool in the **Materials** extension, which Filament Profile requires and installs with it. It gives the brand, the product, the colour and the maker's temperatures. If Materials does not follow the printer, the tab falls back on the type of material the printer reports (PLA, PETG…), and you name each profile yourself.

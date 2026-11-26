@@ -79,6 +79,7 @@ func parseSources(list string) []string {
 	return out
 }
 
+// enabled says whether a source is in the list the operator wrote.
 func enabled(ids []string, id string) bool {
 	for _, have := range ids {
 		if have == id {

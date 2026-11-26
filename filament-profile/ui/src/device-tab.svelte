@@ -1,3 +1,15 @@
+<!--
+  The Filament Profile tab of a printer's page.
+
+  The page reads the tools of the printer (the Materials extension knows each
+  spool's brand, product and colour, and the printer alone gives the type), and
+  finds the nearest PrusaSlicer preset for each spool. The person picks the
+  PrusaSlicer printer, checks or changes the presets and their settings, and
+  downloads one `.ini` Config Bundle to import in PrusaSlicer 2.9.
+
+  A row is one tool. What the person changes is kept by the module (see
+  putState), so it comes back after a change of page or a restart.
+-->
 <script lang="ts">
   import { onMount } from 'svelte';
   import {
@@ -49,6 +61,7 @@
   const host = heldHost();
   const t = host.t;
 
+  /** One tool of the printer, with the spool in it and the profile chosen for it. */
   interface Row {
     tool: Tool;
     brand: string;
@@ -103,8 +116,10 @@
   let busy = $state(false);
   let problem = $state<string | undefined>(undefined);
 
+  /** The browser key that remembers the chosen PrusaSlicer printer, when the module has none. */
   const printerKey = `filament-profile.printer.${deviceId}`;
 
+  /** The sentence for a failed request: the text of its fault code, or the HTTP status. */
   const message = (error: unknown): string => {
     if (error instanceof ProfileError) {
       if (error.status === 404 && error.code === undefined) return t('filament-profile.fault.noMaterials');
@@ -119,11 +134,13 @@
     return t('filament-profile.fault.unknown');
   };
 
+  /** The name the profile is written under: the brand and the material, without repeating the brand. */
   const profileNameOf = (brand: string, material: string): string =>
     brand !== '' && !material.toLowerCase().startsWith(brand.toLowerCase())
       ? `${brand} ${material}`
       : material;
 
+  /** A row for a tool, or nothing when the tool holds no spool the page can name. */
   const rowOf = (tool: Tool): Row | undefined => {
     const brand = tool.assignment?.brand_name ?? '';
     const material = tool.assignment?.material_name ?? tool.reported?.abbreviation ?? '';
@@ -152,6 +169,7 @@
     };
   };
 
+  /** The name shown for a tool: "Extruder" for the only one, otherwise "Tool 2" or "Tool 1 slot 3". */
   const labelOf = (row: Row): string => {
     const name = toolName(row.tool.id, toolCount === 1);
     if (name.tool === undefined) return t('filament-profile.extruder');
@@ -160,14 +178,17 @@
     return t('filament-profile.toolSlot', { n: String(name.tool), slot: String(name.slot) });
   };
 
+  /** A colour fit for a CSS swatch (#rrggbb or #rrggbbaa), or nothing. */
   const swatch = (color: string): string | undefined =>
     /^#[0-9a-f]{6}(?:[0-9a-f]{2})?$/iu.test(color) ? color : undefined;
 
   /** Names the spool a choice was made for: another spool drops the choice. */
   const spoolKey = (row: Row): string => `${row.brand}|${row.material}|${row.type}`;
 
+  /** The filament position in PrusaSlicer, from 1: the tool's place in the printer's order. */
   const slotOf = (row: Row): number => order.indexOf(row.tool.id) + 1;
 
+  /** Whether the catalogue gave temperatures or a density worth writing. */
   const hasTemperatures = (p: Properties | undefined): boolean =>
     p !== undefined &&
     ((p.min_print_temp ?? 0) > 0 || (p.min_bed_temp ?? 0) > 0 || (p.density ?? 0) > 0);
@@ -176,6 +197,7 @@
   const useOf = (row: Row): boolean =>
     hasTemperatures(row.properties) && (row.useProperties ?? row.preset.startsWith('Generic '));
 
+  /** One line of the maker's temperatures and density, for the row. */
   const summaryOf = (p: Properties): string =>
     [
       (p.min_print_temp ?? 0) > 0 ? `${String(p.min_print_temp)}–${String(p.max_print_temp)} °C` : '',
@@ -185,6 +207,7 @@
       .filter((part) => part !== '')
       .join(' · ');
 
+  /** The nozzle of a PrusaSlicer printer preset, such as "0.4 HF". */
   const printerLabel = (p: Printer): string =>
     `${String(p.nozzle_diameter ?? '')}${p.high_flow ? ' HF' : ''}`.trim();
 
@@ -194,8 +217,10 @@
       ? `${candidate.preset} · ${candidate.source}`
       : candidate.preset;
 
+  /** The value of a setting as shown: what the person typed, else the preset's own. */
   const shown = (row: Row, key: string): string => row.edits[key] ?? row.settings[key] ?? '';
 
+  /** Records a change to one setting, and forgets it when it goes back to the preset's value. */
   const edit = (row: Row, key: string, value: string): void => {
     row.touched = true;
     if (value === (row.settings[key] ?? '')) delete row.edits[key];
@@ -205,6 +230,11 @@
   // A newer reading of a tool's settings replaces an older one still on its way.
   const readings = new Map<string, number>();
 
+  /**
+   * Reads what the profile would be written with, for the chosen preset and
+   * printer (and the maker's temperatures when they apply). Several readings
+   * can overlap, and only the last one is kept.
+   */
   const readSettings = async (row: Row): Promise<void> => {
     if (row.preset === '') return;
     const turn = (readings.get(row.tool.id) ?? 0) + 1;
@@ -228,6 +258,7 @@
     }
   };
 
+  /** The person picked another preset: the edits made on the old one are dropped. */
   const pick = (row: Row, preset: string): void => {
     row.touched = true;
     row.preset = preset;
@@ -236,6 +267,7 @@
     void readSettings(row);
   };
 
+  /** Turns the maker's temperatures on or off for a row, and reads its settings again. */
   const useMaker = (row: Row, on: boolean): void => {
     row.touched = true;
     row.useProperties = on;
@@ -243,6 +275,7 @@
     void readSettings(row);
   };
 
+  /** The presets offered for a row: the search results, or, with no search, the nearest and the generic one. */
   const listed = (row: Row): Candidate[] => {
     const words = row.query.toLowerCase().split(/\s+/u).filter((word) => word !== '');
     const found = allPresets.filter((candidate) => {
@@ -259,6 +292,7 @@
     return [...new Set(names)].flatMap((name) => allPresets.filter((candidate) => candidate.preset === name));
   };
 
+  /** Finds the nearest presets for every spool, and takes the first when nothing was chosen. */
   const matchAll = async (): Promise<void> => {
     matching = true;
     try {
@@ -279,6 +313,7 @@
     }
   };
 
+  /** Reads the catalogue's temperatures and density for each spool that has a material id. */
   const loadProperties = async (): Promise<void> => {
     await Promise.all(
       rows.map(async (row) => {
@@ -329,6 +364,7 @@
     return () => clearTimeout(timer);
   });
 
+  /** Reads the PrusaSlicer printers whose name holds the words typed. */
   const searchPrinters = async (): Promise<void> => {
     try {
       printers = await listPrinters(printerQuery.trim(), host.signal);
@@ -337,6 +373,7 @@
     }
   };
 
+  /** Keeps the chosen printer in the browser, as a second place besides the module's. */
   const remember = (value: string): void => {
     try {
       localStorage.setItem(printerKey, value);
@@ -345,6 +382,7 @@
     }
   };
 
+  /** The person chose a PrusaSlicer printer: every row reads its settings again for it. */
   const choosePrinter = async (name: string): Promise<void> => {
     printer = name;
     printerInfo = name === '' ? undefined : (printers.find((p) => p.name === name) ?? printerInfo);
@@ -375,6 +413,11 @@
     }
   };
 
+  /**
+   * Loads the tab: the tools, the state of the catalogue, and what was chosen
+   * last time. Each saved choice is put back on its row only when the spool is
+   * still the same. When the catalogue is ready, the nearest presets are found.
+   */
   const load = async (): Promise<void> => {
     loading = true;
     problem = undefined;
@@ -445,6 +488,7 @@
     void load().then(wait);
   });
 
+  /** Downloads the sources again, then waits for the new catalogue. */
   const refresh = async (): Promise<void> => {
     try {
       status = await refreshCatalogue();
@@ -454,6 +498,11 @@
     }
   };
 
+  /**
+   * Asks the module for the Config Bundle of the rows that are checked, and
+   * saves it as `filament-profile.ini`. A row carries its settings edits, its
+   * spool colour and, when they apply, the maker's temperatures.
+   */
   const download = async (): Promise<void> => {
     busy = true;
     problem = undefined;
@@ -487,6 +536,7 @@
     }
   };
 
+  /** The sources on offer with the number of presets each gave, for the status line. */
   const sourcesLine = $derived(
     Object.entries(status?.sources ?? {})
       .filter(([id]) => status?.enabled?.includes(id) === true)
@@ -500,11 +550,13 @@
       !rows.some((row) => row.include && row.preset !== '' && slotOf(row) === 1),
   );
 
+  // The bundle gives a tool a place beyond the printer's extruders.
   const tooManyTools = $derived(
     printerInfo !== undefined &&
       rows.some((row) => row.include && row.preset !== '' && slotOf(row) > (printerInfo?.extruders ?? 0)),
   );
 
+  /** How many rows will be written. */
   const chosen = $derived(rows.filter((row) => row.include && row.preset !== '').length);
 </script>
 

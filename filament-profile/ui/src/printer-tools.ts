@@ -16,6 +16,7 @@ export interface ReportedTool {
   material_package_instance?: { package: { material: { abbreviation: string } } } | null;
 }
 
+/** A tool in the shape the page uses, whichever source read it. Without Materials nothing is assigned. */
 export interface PrinterTool {
   id: string;
   active: boolean;
@@ -24,6 +25,10 @@ export interface PrinterTool {
   nozzle: { diameter_mm: number; high_flow: boolean; hardened: boolean; high_temp: boolean };
 }
 
+/**
+ * Turns the printer's tool tree into the page's tools. A head that carries a
+ * feeder is skipped, because its slots hold the material.
+ */
 export const toolsFromTree = (tree: Record<string, ReportedTool | null>): PrinterTool[] =>
   Object.entries(tree).flatMap(([id, tool]) => {
     // A head that carries a feeder holds no material: its slots do.

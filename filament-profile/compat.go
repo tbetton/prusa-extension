@@ -26,6 +26,15 @@ var (
 	errNoPrinter = errors.New("no such printer preset")
 )
 
+// The expression is read in two steps. lex cuts the text into tokens (numbers,
+// strings, regular expressions, operators and names). The parser then reads
+// the tokens by precedence, from the loosest to the tightest:
+//
+//	or (|| or) -> and (&& and) -> comparison (== != < > <= >= =~ !~) -> unary (!) -> atom
+//
+// Each level calls the next, and every one answers a value.
+
+// tokenKind says what a token is.
 type tokenKind int
 
 const (
@@ -36,15 +45,19 @@ const (
 	tokIdent
 )
 
+// token is one piece of an expression: its kind, and its text (for a string or
+// a regular expression, the text between the delimiters).
 type token struct {
 	kind tokenKind
 	text string
 }
 
+// isIdentStart says whether a rune may begin the name of an option.
 func isIdentStart(r rune) bool {
 	return r == '_' || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')
 }
 
+// isDigit says whether a rune is a digit from 0 to 9.
 func isDigit(r rune) bool { return r >= '0' && r <= '9' }
 
 // quoted reads from the delimiter at start to the next one, keeping the
@@ -69,6 +82,8 @@ func quoted(rs []rune, start int, delim rune) (int, string, error) {
 	return 0, "", fmt.Errorf("%w: a %c is never closed", errCondition, delim)
 }
 
+// lex cuts an expression into tokens, and refuses a string or a regular
+// expression that is never closed, or a character the language does not use.
 func lex(src string) ([]token, error) {
 	var out []token
 
@@ -135,6 +150,8 @@ func lex(src string) ([]token, error) {
 	return out, nil
 }
 
+// valueKind says what a value holds. The language is loosely typed: text that
+// spells a number counts as that number (see number and compare).
 type valueKind int
 
 const (
@@ -144,6 +161,8 @@ const (
 	vRegex
 )
 
+// value is what an expression answers: text, a number, a yes or no, or a
+// regular expression (only valid on the right of =~ and !~).
 type value struct {
 	kind valueKind
 	str  string
@@ -151,8 +170,11 @@ type value struct {
 	flag bool
 }
 
+// boolValue is a yes or no as a value.
 func boolValue(b bool) value { return value{kind: vBool, flag: b} }
 
+// truth says whether a value counts as true: a non-zero number, a yes, or text
+// that is neither empty nor "0".
 func truth(v value) bool {
 	switch v.kind {
 	case vBool:
@@ -166,6 +188,7 @@ func truth(v value) bool {
 	}
 }
 
+// text writes a value as the text a comparison reads.
 func text(v value) string {
 	switch v.kind {
 	case vNum:
@@ -215,6 +238,10 @@ var defaults = map[string]string{
 	"printer_technology":             "FFF",
 }
 
+// compare applies a comparison operator to two values. The regular expression
+// operators match the whole text. The others compare as numbers when both sides
+// read as numbers and as text when neither does. A number against a word is
+// never equal and has no order.
 func compare(op string, a, b value) (value, error) {
 	if op == "=~" || op == "!~" {
 		if b.kind != vRegex {
@@ -265,12 +292,16 @@ func compare(op string, a, b value) (value, error) {
 	}
 }
 
+// parser reads the tokens of one expression. env holds the options of the
+// printer preset the expression is asked about.
 type parser struct {
 	toks []token
 	pos  int
 	env  map[string]string
 }
 
+// peek answers the next token without taking it, or an empty operator at the
+// end.
 func (p *parser) peek() token {
 	if p.pos < len(p.toks) {
 		return p.toks[p.pos]
@@ -279,18 +310,22 @@ func (p *parser) peek() token {
 	return token{kind: tokOp}
 }
 
+// isOp says whether the next token is that operator.
 func (p *parser) isOp(op string) bool {
 	t := p.peek()
 
 	return t.kind == tokOp && t.text == op
 }
 
+// isWord says whether the next token is that name, such as `and` or `or`.
 func (p *parser) isWord(word string) bool {
 	t := p.peek()
 
 	return t.kind == tokIdent && t.text == word
 }
 
+// or reads `a or b`, the loosest level. Both sides are always read, so a
+// mistake on the right is reported even when the left is already true.
 func (p *parser) or() (value, error) {
 	left, err := p.and()
 	if err != nil {
@@ -311,6 +346,7 @@ func (p *parser) or() (value, error) {
 	return left, nil
 }
 
+// and reads `a and b`, one level tighter than or.
 func (p *parser) and() (value, error) {
 	left, err := p.cmp()
 	if err != nil {
@@ -331,6 +367,7 @@ func (p *parser) and() (value, error) {
 	return left, nil
 }
 
+// cmp reads one comparison, such as `printer_model == "MK4"`.
 func (p *parser) cmp() (value, error) {
 	left, err := p.unary()
 	if err != nil {
@@ -358,6 +395,7 @@ func (p *parser) cmp() (value, error) {
 	return compare(t.text, left, right)
 }
 
+// unary reads a `!` in front of an expression, or goes on to the atom.
 func (p *parser) unary() (value, error) {
 	if p.isOp("!") {
 		p.pos++
@@ -373,6 +411,9 @@ func (p *parser) unary() (value, error) {
 	return p.atom()
 }
 
+// atom reads a number, a string, a regular expression, an option or an
+// expression in parentheses. An option is looked up in the preset, then in
+// `defaults` (see option); an option nobody knows is an error.
 func (p *parser) atom() (value, error) {
 	if p.pos >= len(p.toks) {
 		return value{}, fmt.Errorf("%w: it ends too soon", errCondition)
