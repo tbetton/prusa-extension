@@ -102,5 +102,20 @@
   "print-queue.issue.dispatchFailed": "Prusa Connect did not accept the job.",
   "print-queue.issue.transferFailed": "The transfer to the printer failed.",
   "print-queue.issue.startRejected": "The printer refused or could not start the print.",
-  "print-queue.issue.printFailed": "The print failed."
+  "print-queue.issue.printFailed": "The print failed.",
+  "print-queue.pick.hintStorage": "Click a file in the server's storage to queue it. A file saved by the PrusaSlicer 2 Connector is in the folder chosen for the printer.",
+  "print-queue.pick.source": "Where to look for files",
+  "print-queue.pick.sourcePrinter": "Printer drive",
+  "print-queue.pick.sourceStorage": "Server storage",
+  "print-queue.pick.loadingStorage": "Reading the storage…",
+  "print-queue.howTo.title": "PrusaSlicer",
+  "print-queue.howTo.intro": "Print Queue does not receive files from PrusaSlicer itself. The PrusaSlicer 2 Connector extension, published by Prusa, lets PrusaSlicer 2.4 and later send a file to a printer of this server as to a printer with PrusaLink. Print Queue then reads the file where it landed.",
+  "print-queue.howTo.stepsTitle": "Set it up",
+  "print-queue.howTo.steps.install": "Install the PrusaSlicer 2 Connector extension in Settings, Extensions. Print Queue works without it.",
+  "print-queue.howTo.steps.card": "Open a printer's page, its Printer tab, and the PrusaSlicer 2 Connector card under Connection. Press Create an API key and copy the address and the key.",
+  "print-queue.howTo.steps.slicer": "In PrusaSlicer, press Add physical printer. Set Host Type to PrusaLink, paste the address, set Authorization Type to API key and paste the key. Press Test.",
+  "print-queue.howTo.steps.save": "For a copy on this server, turn on Save to storage on the same card and pick a storage and a folder.",
+  "print-queue.howTo.steps.queue": "Slice, then press Upload in PrusaSlicer. Do not press Upload and Print: that starts the file at once.",
+  "print-queue.howTo.steps.add": "In Print Queue, press Add a file on the printer. The file is on the Printer drive tab, newest first, and on the Server storage tab in the folder you picked.",
+  "print-queue.howTo.limits": "The connector sends the file to the printer's drive as well, so the printer must be reachable when you press Upload. It takes .gcode and .bgcode files only. Save to storage is one setting for each printer, and the file is saved as the person whose API key sent it."
 }

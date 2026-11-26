@@ -113,6 +113,33 @@ export const listPrinterFiles = async (
   }
 };
 
+/** One storage of the server, and one entry of a folder of a storage. */
+export type StorageInfo = components['schemas']['Storage'];
+export type StorageFile = components['schemas']['StorageEntry'];
+
+const asQueueError = (error: unknown): unknown =>
+  error instanceof ApiError ? new QueueError(error.status, error.code, error.problem?.detail) : error;
+
+/** The storages of the server the person may browse. */
+export const listStorages = async (): Promise<StorageInfo[]> => {
+  try {
+    const { items } = await heldHost().client.listStorages({});
+    return items ?? [];
+  } catch (error) {
+    throw asQueueError(error);
+  }
+};
+
+/** One folder of a storage; an empty path is its root. */
+export const listStorageFolder = async (storage: string, path: string): Promise<StorageFile[]> => {
+  try {
+    const { items } = await heldHost().client.listStorageFiles({ path: { storage }, query: { path } });
+    return items ?? [];
+  } catch (error) {
+    throw asQueueError(error);
+  }
+};
+
 export const removeJob = (id: string): Promise<void> => call('DELETE', `/jobs/${id}`);
 
 export const moveJob = (id: string, direction: 'up' | 'down'): Promise<void> =>

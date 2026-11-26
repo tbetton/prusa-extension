@@ -283,11 +283,14 @@
     });
   };
 
-  /** Printer paths already waiting or printing, with how many times. */
+  /** Files already waiting or printing, with how many times, by `storage:path`. */
   const queuedPaths = (id: string): Record<string, number> => {
     const counts: Record<string, number> = {};
     for (const job of jobsOf(id)) {
-      if (job.storage === '' && !isFinished(job)) counts[job.path] = (counts[job.path] ?? 0) + 1;
+      if (!isFinished(job)) {
+        const key = `${job.storage}:${job.path}`;
+        counts[key] = (counts[key] ?? 0) + 1;
+      }
     }
     return counts;
   };

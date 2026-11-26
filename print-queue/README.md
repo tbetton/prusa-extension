@@ -9,6 +9,10 @@ Print Queue manages a separate queue for each printer. When a printer reports **
 - See the current print and its progress, including prints started outside the extension.
 - The extension stores the queue in `queue.json` in its data directory.
 
+## Send a file from PrusaSlicer
+
+Print Queue does not receive files from PrusaSlicer itself, and it does not require another extension. The PrusaSlicer 2 Connector extension published by Prusa lets PrusaSlicer 2.4 and later send a file to a printer of the server as to a printer with PrusaLink. Press **Upload** in PrusaSlicer, not **Upload and Print**, which starts the file at once. Then press **Add a file** on the printer in Print Queue. The file is on the **Printer drive** tab, and on the **Server storage** tab when the connector's **Save to storage** switch is on for that printer. **Settings → Extensions → Print Queue → PrusaSlicer** lists the steps.
+
 The extension displays its interface, dates, and error messages in English.
 
 ## Build and install
