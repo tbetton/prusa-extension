@@ -1,3 +1,4 @@
+<!-- The Print Queue tab of a printer's page: the same view as the page, for one printer. -->
 <script lang="ts">
   import QueueView from './queue-view.svelte';
 

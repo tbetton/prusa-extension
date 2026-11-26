@@ -1,3 +1,9 @@
+// The queue's data and the scheduler that moves each job through it.
+//
+// A job is added as `queued`, becomes `starting` when the scheduler sends it to
+// the printer, `printing` once the printer reports the print, and ends as
+// `done`, `stopped` or `failed`. Store keeps every job on disk. Scheduler reads
+// the printers and changes the jobs.
 package main
 
 import (
@@ -45,24 +51,39 @@ var (
 
 // Job is one entry of a printer's queue.
 type Job struct {
-	ID           string     `json:"id"`
-	DeviceID     string     `json:"device_id"`
-	Storage      string     `json:"storage"`
-	Path         string     `json:"path"`
-	Name         string     `json:"name"`
-	AddedBy      string     `json:"added_by,omitempty"`
-	AddedAt      time.Time  `json:"added_at"`
-	NotBefore    *time.Time `json:"not_before,omitempty"`
-	Status       string     `json:"status"`
-	Detail       string     `json:"detail,omitempty"`
-	DetailCode   string     `json:"detail_code,omitempty"`
-	PrinterPath  string     `json:"printer_path,omitempty"`
-	StartedAt    *time.Time `json:"started_at,omitempty"`
-	EndedAt      *time.Time `json:"ended_at,omitempty"`
-	TransferID   string     `json:"transfer_id,omitempty"`
-	TransferDone bool       `json:"transfer_done,omitempty"`
-	CommandID    string     `json:"command_id,omitempty"`
-	PrintID      string     `json:"print_id,omitempty"`
+	ID       string `json:"id"`
+	DeviceID string `json:"device_id"`
+	// Storage names the server storage the file is read from. It is empty for
+	// a file the printer already holds on its own drive, which is then printed
+	// where it is and sent nowhere.
+	Storage string `json:"storage"`
+	// Path is the file's path inside Storage, or on the printer when Storage
+	// is empty.
+	Path string `json:"path"`
+	Name string `json:"name"`
+	// AddedBy is the person whose rights are checked again when the job
+	// starts, so a person who lost access cannot print through the queue.
+	AddedBy string    `json:"added_by,omitempty"`
+	AddedAt time.Time `json:"added_at"`
+	// NotBefore holds the job until that time. Nil means as soon as possible.
+	NotBefore *time.Time `json:"not_before,omitempty"`
+	Status    string     `json:"status"`
+	// Detail is the sentence for DetailCode, kept so older snapshots read well.
+	// DetailCode says why a job failed or waits, and is a key of jobDetails.
+	Detail     string `json:"detail,omitempty"`
+	DetailCode string `json:"detail_code,omitempty"`
+	// PrinterPath is where the file sits on the printer once sent. A file from
+	// storage gets a unique name there, so it never overwrites another file.
+	PrinterPath string     `json:"printer_path,omitempty"`
+	StartedAt   *time.Time `json:"started_at,omitempty"`
+	EndedAt     *time.Time `json:"ended_at,omitempty"`
+	// TransferID, TransferDone and CommandID follow the send and the start
+	// command through the host's events. PrintID is the print the printer
+	// reports, which ties the job to the host's job history.
+	TransferID   string `json:"transfer_id,omitempty"`
+	TransferDone bool   `json:"transfer_done,omitempty"`
+	CommandID    string `json:"command_id,omitempty"`
+	PrintID      string `json:"print_id,omitempty"`
 }
 
 var jobDetails = map[string]string{
@@ -106,9 +127,14 @@ func (j Job) finished() bool {
 
 // snapshot is everything the module keeps, written whole to one file.
 type snapshot struct {
-	Jobs             []Job                  `json:"jobs"`
-	Paused           map[string]bool        `json:"paused"`
-	Cursor           string                 `json:"cursor,omitempty"`
+	Jobs []Job `json:"jobs"`
+	// Paused holds the queue of a printer: nothing starts until it is lifted.
+	Paused map[string]bool `json:"paused"`
+	// Cursor is the last event of the host's stream this module has handled,
+	// so a restart resumes where it stopped (see print_events.go).
+	Cursor string `json:"cursor,omitempty"`
+	// UnconfirmedReady holds the printers marked ready by hand, until the
+	// printer itself reports READY (see ready.go).
 	UnconfirmedReady map[string]readyMarker `json:"plate_ready,omitempty"`
 	// AutoAdd names, for each printer whose uploads from PrusaSlicer join its
 	// queue by themselves, the person who asked for it.
@@ -120,6 +146,9 @@ type snapshot struct {
 	InboxFolders map[string]string `json:"inbox_folders,omitempty"`
 }
 
+// nextQueued answers the first job of a printer that is waiting and whose
+// start time has come, in queue order. A job held until later is skipped, so it
+// does not block the ones behind it.
 func (data *snapshot) nextQueued(deviceID string, now time.Time) *Job {
 	for i := range data.Jobs {
 		job := &data.Jobs[i]
@@ -292,6 +321,7 @@ func (s *Store) List(device string) View {
 	return view
 }
 
+// deviceIDs lists, in order, every printer the view says something about.
 func (v View) deviceIDs() []string {
 	ids := make(map[string]struct{}, len(v.Paused))
 	for id := range v.Paused {
@@ -306,6 +336,7 @@ func (v View) deviceIDs() []string {
 	return slices.Sorted(maps.Keys(ids))
 }
 
+// job answers a copy of one job, and false when the queue holds no such job.
 func (s *Store) job(id string) (Job, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -464,10 +495,12 @@ func (s *Store) ClearFinished(devices map[string]bool) error {
 	})
 }
 
+// indexOf answers the position of a job in the list, or -1.
 func indexOf(jobs []Job, id string) int {
 	return slices.IndexFunc(jobs, func(job Job) bool { return job.ID == id })
 }
 
+// newID answers a random identifier for a job.
 func newID() string {
 	var raw [8]byte
 
@@ -488,16 +521,23 @@ type fleet interface {
 // Scheduler starts the next job of each printer when the printer says it is
 // ready, and follows the job until the printer reports its end.
 type Scheduler struct {
-	store        *Store
-	fleet        fleet
-	now          func() time.Time
+	store *Store
+	fleet fleet
+	now   func() time.Time
+	// startTimeout is how long a job may stay `starting` before it is held as
+	// unconfirmed.
 	startTimeout time.Duration
-	folder       string
-	logf         func(format string, args ...any)
-	authorize    func(context.Context, Job) error
-	command      func(context.Context, deviceapi.CommandParams) (deviceapi.Result, error)
-	mu           sync.Mutex // orders dispatch and stream windows
-	following    bool
+	// folder is the printer folder a file from storage is sent to.
+	folder string
+	logf   func(format string, args ...any)
+	// authorize checks again, at the moment of the start, that the person who
+	// queued a job may still print on the printer and read the file.
+	authorize func(context.Context, Job) error
+	command   func(context.Context, deviceapi.CommandParams) (deviceapi.Result, error)
+	mu        sync.Mutex // orders dispatch and stream windows
+	// following is true once the host's event stream is being read. No job
+	// starts before that, so a print is never started blind.
+	following bool
 }
 
 // printerState reads the printer's own word for what it is doing.
@@ -528,6 +568,8 @@ func (sc *Scheduler) Tick(ctx context.Context) {
 	}
 }
 
+// devicesWithWork lists the printers that have a job to start or follow, or a
+// manual ready mark to settle, so Tick skips the idle ones.
 func (sc *Scheduler) devicesWithWork() []string {
 	sc.store.mu.Lock()
 	defer sc.store.mu.Unlock()
@@ -548,6 +590,16 @@ func (sc *Scheduler) devicesWithWork() []string {
 	return devices
 }
 
+// tickDevice looks at one printer once, in these steps:
+//
+//  1. Reconcile the queue with the printer's job data (syncPrints).
+//  2. Under one save of the queue: hold any job that lost track of its print
+//     as unconfirmed, settle the manual ready mark, and pick the next job.
+//  3. Send the picked job, after the save, so a crash cannot lose the attempt.
+//
+// The next job starts only when the printer is connected and reports READY,
+// nothing else is starting or printing on it, its queue is not held, and no
+// ready mark is waiting for the printer to confirm.
 func (sc *Scheduler) tickDevice(ctx context.Context, deviceID string) {
 	now := sc.now().UTC()
 	sc.syncPrints(ctx, deviceID, now)
@@ -591,6 +643,8 @@ func (sc *Scheduler) tickDevice(ctx context.Context, deviceID string) {
 			}
 		}
 
+		// A printer marked ready by hand stays guarded until it has itself
+		// reported READY and then left it, so a stale mark never releases a job.
 		marker, exists := data.UnconfirmedReady[deviceID]
 		guarded = exists
 		if available && exists {
@@ -648,6 +702,12 @@ func holdUnconfirmed(data *snapshot, job *Job, now time.Time) {
 }
 
 // start dispatches a job only after checking the requesting user's current rights.
+//
+// The job is already saved as `starting`. A refusal to answer (cancelled or
+// too many questions) puts it back in the queue, a lost permission fails it, and
+// a print the printer may already be reading is held as unconfirmed rather than
+// risk starting it twice. Success only records the transfer and command ids:
+// the events then carry the job to `printing` and to its end.
 func (sc *Scheduler) start(ctx context.Context, job Job) {
 	params := deviceapi.PrintParams{ID: job.DeviceID, Path: job.PrinterPath}
 	if job.Storage != "" {

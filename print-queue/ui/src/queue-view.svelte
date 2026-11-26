@@ -1,3 +1,13 @@
+<!--
+  The queue of one printer, or of every printer when no printer is given.
+
+  It reads the module's queue and each printer's running print every five
+  seconds, draws one card per printer (the timeline, then the jobs in the order
+  the printer will work through them), and offers the actions the person may
+  take: add a file, mark the printer ready, hold its queue, and for each job
+  move, schedule, remove or queue it again. The "Active" tab lists waiting and
+  running jobs, and the "Ended" tab the ones that finished.
+-->
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { isPrinterState } from '@prusa/connect-ui/domain';
@@ -58,6 +68,9 @@
   const t = host.t;
   const fleet = host.fleet;
 
+  // What the page holds. `queue` is the module's answer, read again every five
+  // seconds. `currentPrints` is each printer's running print, read from the
+  // host, which also covers a print that was not started by the queue.
   let queue = $state<Queue | undefined>(undefined);
   let failure = $state<{ error: unknown } | undefined>(undefined);
   let editing = $state<string | undefined>(undefined);
@@ -73,6 +86,10 @@
   let currentPrints = $state<Record<string, CurrentPrint>>({});
   let refreshingPrints = false;
 
+  /**
+   * Reads the running print of each printer that looks busy (or had one on the
+   * last pass). One call at a time: a slow answer never stacks requests.
+   */
   const refreshCurrentPrints = async (): Promise<void> => {
     if (refreshingPrints || host.signal.aborted) return;
     refreshingPrints = true;
@@ -98,6 +115,7 @@
     }
   };
 
+  /** Reads the queue again. A failure is shown, and the last queue stays on screen. */
   const refresh = async (): Promise<void> => {
     try {
       queue = await listJobs(deviceId, host.signal);
@@ -108,6 +126,7 @@
     }
   };
 
+  /** Computes, for each printer, how much longer real prints take than the slicer said. */
   const loadFactors = async (): Promise<void> => {
     for (const id of printers) {
       try {
@@ -118,6 +137,8 @@
     }
   };
 
+  // Read at once, then every five seconds. The timers stop when the page is
+  // left or when the person who signed in leaves.
   void refresh();
   void refreshCurrentPrints();
   const timer = setInterval(() => {
@@ -132,6 +153,7 @@
     clearInterval(slow);
   });
 
+  /** Runs one change, then reads the queue again. A refusal becomes a toast. */
   const act = async (work: () => Promise<unknown>): Promise<void> => {
     busy = true;
     try {
@@ -160,6 +182,12 @@
 
   const nameOf = (id: string): string => fleet.device(id)?.name ?? id;
 
+  /**
+   * Whether the "Mark as ready" button applies to a printer, and if not why:
+   * `offline`, `printing`, `ready` (nothing to confirm), `unavailable` (the
+   * printer cannot be marked ready in its state), or `available`. Nothing for a
+   * person who may not operate the printer.
+   */
   const manualReadiness = (id: string): 'available' | 'printing' | 'offline' | 'ready' | 'unavailable' | undefined => {
     const device = fleet.device(id);
     if (device?.actions?.includes('operate') !== true) return undefined;
@@ -177,6 +205,7 @@
     return 'available';
   };
 
+  /** The printer's own state, in words, as the badge on its card shows it. */
   const stateOf = (id: string): string => {
     const state = fleet.device(id)?.state as Record<string, unknown> | undefined;
     const value = state?.['/state'];
@@ -184,6 +213,7 @@
     return isPrinterState(value) ? t(`print-queue.state.${value}`) : value;
   };
 
+  /** The colour of a job's badge for its status. */
   const variant = (status: Job['status'] | 'unconfirmed') => {
     switch (status) {
       case 'printing':
@@ -201,6 +231,7 @@
     }
   };
 
+  /** A date for a job's line: weekday, day, month and time. */
   const when = (iso: string | undefined): string =>
     iso
       ? formatDate(iso, {
@@ -218,6 +249,8 @@
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
   };
 
+  // Scheduling: the input holds a local date and time, and saving it holds the
+  // job until then. Saving it empty releases the job.
   const startEditing = (job: PlanJob): void => {
     editing = job.id;
     const base = job.not_before ? new Date(job.not_before) : new Date(Date.now() + 3600_000);
@@ -261,10 +294,17 @@
       .filter(isFinished)
       .sort((a, b) => ms(b.ended_at ?? b.started_at) - ms(a.ended_at ?? a.started_at));
 
+  // Work out the correction once, when the first printer is known, then every
+  // ten minutes (see `slow`).
   $effect(() => {
     if (printers.length > 0 && Object.keys(factors).length === 0) void loadFactors();
   });
 
+  /**
+   * Lays one printer's active jobs out in time. When the printer is printing,
+   * its own remaining time sets the end of the running print, which moves
+   * everything behind it.
+   */
   const slotsOf = (id: string): Slot[] => {
     const jobs = activeOf(id);
     const current = currentPrints[id];
@@ -296,6 +336,7 @@
     return counts;
   };
 
+  /** The sentence for why a job failed or waits: the translated one when there is one. */
   const jobDetail = (job: PlanJob): string | undefined => {
     if (!job.detail_code) return job.detail;
     const key = `print-queue.issue.${job.detail_code}`;
@@ -307,6 +348,7 @@
   const finishedCount = $derived(printers.reduce((n, id) => n + finishedOf(id).length, 0));
 </script>
 
+<!-- One line of a printer's list: picture, status, name, expected times and the actions allowed for the job's status. -->
 {#snippet jobRow(job: PlanJob, position?: number, slot?: Slot)}
   {@const detail = jobDetail(job)}
   {@const displayStatus = job.detail_code === 'unconfirmed' ? 'unconfirmed' : job.status}
