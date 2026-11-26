@@ -34,6 +34,7 @@
   } from './api';
   import { heldHost } from './host';
   import { formatClock, formatDate, formatDuration, formatNumber, queueErrorText } from './i18n';
+  import Inbox from './inbox.svelte';
   import PrinterFiles from './printer-files.svelte';
   import {
     CHANGEOVER_MS,
@@ -491,6 +492,7 @@
             {/if}
           </CardHeader>
           <CardContent>
+            <Inbox deviceId={printer} onchange={() => void refresh()} />
             {#if jobs.length > 0}
               <div class="mb-3 flex flex-col gap-1">
                 <Timeline {slots} {now} />

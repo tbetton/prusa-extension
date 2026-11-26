@@ -110,6 +110,12 @@ type snapshot struct {
 	Paused           map[string]bool        `json:"paused"`
 	Cursor           string                 `json:"cursor,omitempty"`
 	UnconfirmedReady map[string]readyMarker `json:"plate_ready,omitempty"`
+	// AutoAdd names, for each printer whose uploads from PrusaSlicer join its
+	// queue by themselves, the person who asked for it.
+	AutoAdd map[string]string `json:"auto_add,omitempty"`
+	// Handled is the modification time of each inbox file that was added to a
+	// queue or ignored, by storage and path.
+	Handled map[string]int64 `json:"inbox_handled,omitempty"`
 }
 
 func (data *snapshot) nextQueued(deviceID string, now time.Time) *Job {
@@ -206,6 +212,7 @@ func (s *Store) update(change func(*snapshot) error) error {
 	next := snapshot{
 		Jobs: slices.Clone(s.data.Jobs), Paused: maps.Clone(s.data.Paused),
 		Cursor: s.data.Cursor, UnconfirmedReady: maps.Clone(s.data.UnconfirmedReady),
+		AutoAdd: maps.Clone(s.data.AutoAdd), Handled: maps.Clone(s.data.Handled),
 	}
 	if err := change(&next); err != nil {
 		return err

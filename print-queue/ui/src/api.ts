@@ -156,6 +156,30 @@ export const clearFinished = (deviceId: string | undefined): Promise<void> =>
 export const setPaused = (deviceId: string, paused: boolean): Promise<void> =>
   call('PUT', `/devices/${deviceId}/paused`, { paused });
 
+/** One file PrusaSlicer left in a printer's folder, and what the folder says. */
+export interface InboxItem {
+  name: string;
+  path: string;
+  size: number;
+  modified: string;
+}
+
+export interface Inbox {
+  storage: string;
+  folder: string;
+  auto: boolean;
+  items: InboxItem[];
+}
+
+export const getInbox = (deviceId: string, signal?: AbortSignal): Promise<Inbox> =>
+  call<Inbox>('GET', `/devices/${encodeURIComponent(deviceId)}/inbox`, undefined, signal);
+
+export const dismissInboxItem = (deviceId: string, path: string): Promise<void> =>
+  call('POST', `/devices/${encodeURIComponent(deviceId)}/inbox/dismiss`, { path });
+
+export const setInboxAuto = (deviceId: string, enabled: boolean): Promise<void> =>
+  call('PUT', `/devices/${encodeURIComponent(deviceId)}/inbox-auto`, { enabled });
+
 export const markPrinterReady = (deviceId: string): Promise<void> =>
   call('POST', `/devices/${encodeURIComponent(deviceId)}/ready`, { plate_empty: true });
 

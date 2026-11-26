@@ -6,7 +6,7 @@
 
 name: print-queue
 kind: sink
-version: 0.2.2
+version: 0.3.0
 license: MIT
 title: Print Queue
 summary: Queue and schedule prints for each printer.
@@ -31,6 +31,9 @@ require:
   core-device.command: "*"
   core-device.print: "*"
   core-storage.stat: "*"
+  # Read the folder of each printer the PrusaSlicer 2 Connector saves its
+  # uploads in.
+  core-storage.list: "*"
 
 options:
   - key: poll_seconds
@@ -45,6 +48,14 @@ options:
     type: string
     default: "usb"
     summary: Destination folder on the printer.
+  - key: inbox_storage
+    type: string
+    default: "local"
+    summary: Storage where the PrusaSlicer 2 Connector saves uploads.
+  - key: inbox_folder
+    type: string
+    default: "print-queue"
+    summary: Folder of that storage holding one folder for each printer, named after it.
   - key: keep_history
     type: int
     default: "20"
