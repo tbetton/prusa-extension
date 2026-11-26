@@ -7,6 +7,10 @@ Write the entry in the same change as the code. One bullet per behaviour a
 person outside this repository can observe: a route, a setting, a screen, a
 refusal. Name the route and the setting key, never a function or a file.
 
+## 0.3.3
+
+- No change in behaviour. The source is documented throughout, and `ARCHITECTURE.md` explains how the code is organised and how a print moves through it.
+
 ## 0.3.2
 
 - Add **Set up PrusaSlicer uploads** to **From PrusaSlicer**. It asks the PrusaSlicer 2 Connector, when it is installed, to save the printer's uploads in `print-queue/<printer name>` of the storage `inbox_storage`, and Print Queue reads that folder. It needs the permission to change **Save to storage** on the connector.

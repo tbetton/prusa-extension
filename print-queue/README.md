@@ -1,5 +1,7 @@
 # Print Queue for Prusa Connect Local
 
+To understand or change the code, read [ARCHITECTURE.md](ARCHITECTURE.md).
+
 Print Queue manages a separate queue for each printer. When a printer reports **READY**, the extension starts the next eligible job from server storage or the printer's drive. Clear the build plate and confirm readiness on the printer or with **Mark as ready**. You can schedule a job to wait until a given time.
 
 - Open **Print Queue** in the sidebar to see all printers or open the **Print Queue** tab on a printer's page.

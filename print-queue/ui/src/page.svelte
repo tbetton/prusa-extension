@@ -1,3 +1,4 @@
+<!-- The Print Queue page of the sidebar: the queue of every printer. -->
 <script lang="ts">
   import { SOURCE_LOCALE } from '@prusa/connect-ui/i18n';
   import { PageHeader } from '@prusa/connect-ui/primitives';

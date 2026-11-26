@@ -2,6 +2,20 @@
 // for each printer. When a printer reports READY (the plate was cleared and
 // confirmed on the printer), it sends the next queued file from the server's
 // storage and starts it. A job may also wait for a given time.
+//
+// The code is split by what it does:
+//
+//	main.go           the process, its settings and the HTTP routes of the queue
+//	queue.go          the jobs, their storage on disk, and the scheduler
+//	print_events.go   follows the host's events to track each print
+//	print_history.go  settles jobs from the printer's job history
+//	ready.go          marks a printer ready by hand
+//	inbox.go          the files PrusaSlicer left for a printer
+//	faults.go         the refusals the routes answer
+//
+// The module runs as a child process of Prusa Connect and talks to it over its
+// standard input and output. Every request carries the person it is made for
+// (the principal), and the module asks the host whether that person may act.
 package main
 
 import (
@@ -34,11 +48,12 @@ import (
 
 const (
 	name    = "print-queue"
-	release = extension.Version("0.3.2")
+	release = extension.Version("0.3.3")
 )
 
 // Settings is what an operator writes under this instance's config block. The
-// defaults live in module.yaml.
+// defaults live in module.yaml, and withDefaults repeats them so a missing key
+// never reaches the code as a zero.
 type Settings struct {
 	PollSeconds         int    `json:"poll_seconds"`
 	StartTimeoutMinutes int    `json:"start_timeout_minutes"`
@@ -79,6 +94,9 @@ func (s Settings) withDefaults() Settings {
 	return s
 }
 
+// openAPI is the description of this module's routes, served to the host so it
+// can publish them in its own API reference.
+//
 //go:embed openapi.json
 var openAPI []byte
 
@@ -108,10 +126,15 @@ type module struct {
 	inboxLogged  time.Time
 }
 
+// logf writes a line to the module's log, which the host keeps with its own.
 func logf(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, name+": "+format+"\n", args...)
 }
 
+// run starts the session with the host: it announces the protocol on standard
+// output, builds the clients the module uses (printers, storage, access), and
+// serves the host's calls until the process is asked to stop. The module does
+// nothing useful until the host sends its settings (see configure).
 func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -155,6 +178,8 @@ func run() error {
 	return nil
 }
 
+// methods lists the calls the host may make to this module: its description,
+// its settings, the request to stop, and the HTTP routes.
 func (m *module) methods() wirerpc.Methods {
 	return wirerpc.Methods{
 		wirerpc.MethodInfo: func(context.Context, wirerpc.Call) (any, error) {
@@ -223,6 +248,10 @@ func (m *module) configure(_ context.Context, sent Settings, grants wirerpc.Gran
 	return nil
 }
 
+// loop runs, every `every`, one pass of the scheduler (start what is ready and
+// settle what the printers finished) and one pass of the inbox (add the new
+// files of the printers set to add them by themselves). Each pass has a time
+// limit of three intervals, so a slow host cannot pile passes up.
 func (m *module) loop(every time.Duration) {
 	ticker := time.NewTicker(every)
 	defer ticker.Stop()
@@ -255,6 +284,8 @@ func (m *module) ready(w http.ResponseWriter, r *http.Request) *Store {
 	return m.store
 }
 
+// addBody is the body of POST /jobs. An empty Storage means the file is already
+// on the printer's own drive.
 type addBody struct {
 	DeviceID  string     `json:"device_id"`
 	Storage   string     `json:"storage"`
@@ -279,9 +310,14 @@ type clearBody struct {
 	DeviceID string `json:"device_id"`
 }
 
+// routes builds the HTTP routes of the queue. Each one first asks the host
+// whether the caller may see (observe) or change (operate) the printer, and a
+// route that adds a file also checks the caller may read it.
 func (m *module) routes() http.Handler {
 	mux := http.NewServeMux()
 
+	// GET /jobs: the queue of one printer (?device=), or of every printer the
+	// caller may observe.
 	mux.HandleFunc("GET /jobs", func(w http.ResponseWriter, r *http.Request) {
 		store := m.ready(w, r)
 		if store == nil {
@@ -319,6 +355,8 @@ func (m *module) routes() http.Handler {
 
 	m.registerInbox(mux)
 
+	// POST /jobs: add a file to the end of a printer's queue. The caller must
+	// operate the printer and, for a file in storage, read that file.
 	mux.HandleFunc("POST /jobs", func(w http.ResponseWriter, r *http.Request) {
 		store := m.ready(w, r)
 		if store == nil {
@@ -386,10 +424,12 @@ func (m *module) routes() http.Handler {
 		answer(w, http.StatusCreated, job)
 	})
 
+	// DELETE /jobs/{id}: take a waiting or ended job out of the queue.
 	mux.HandleFunc("DELETE /jobs/{id}", func(w http.ResponseWriter, r *http.Request) {
 		m.changeJob(w, r, func(store *Store, job Job) error { return store.Remove(job.ID) })
 	})
 
+	// POST /jobs/{id}/move: swap a waiting job with its neighbour, up or down.
 	mux.HandleFunc("POST /jobs/{id}/move", func(w http.ResponseWriter, r *http.Request) {
 		var body moveBody
 		if !decode(w, r, &body) {
@@ -405,6 +445,7 @@ func (m *module) routes() http.Handler {
 		m.changeJob(w, r, func(store *Store, job Job) error { return store.Move(job.ID, body.Direction == "up") })
 	})
 
+	// PUT /jobs/{id}/schedule: hold a waiting job until a time, or release it.
 	mux.HandleFunc("PUT /jobs/{id}/schedule", func(w http.ResponseWriter, r *http.Request) {
 		var body scheduleBody
 		if !decode(w, r, &body) {
@@ -414,6 +455,8 @@ func (m *module) routes() http.Handler {
 		m.changeJob(w, r, func(store *Store, job Job) error { return store.Schedule(job.ID, body.NotBefore) })
 	})
 
+	// POST /jobs/{id}/requeue: put an ended job back at the end of the queue,
+	// now owned by the caller, who must still be able to read its file.
 	mux.HandleFunc("POST /jobs/{id}/requeue", func(w http.ResponseWriter, r *http.Request) {
 		m.changeJob(w, r, func(store *Store, job Job) error {
 			principal := routesapi.PrincipalOf(r)
@@ -424,6 +467,8 @@ func (m *module) routes() http.Handler {
 		})
 	})
 
+	// POST /jobs/clear-finished: forget the ended jobs of one printer, or of
+	// every printer the caller may operate.
 	mux.HandleFunc("POST /jobs/clear-finished", func(w http.ResponseWriter, r *http.Request) {
 		var body clearBody
 		if !decode(w, r, &body) {
@@ -449,6 +494,7 @@ func (m *module) routes() http.Handler {
 		m.writeResult(w, r, store.ClearFinished(allowed))
 	})
 
+	// PUT /devices/{id}/paused: hold a printer's queue, or let it run again.
 	mux.HandleFunc("PUT /devices/{id}/paused", func(w http.ResponseWriter, r *http.Request) {
 		var body pausedBody
 		if !decode(w, r, &body) {
@@ -461,6 +507,7 @@ func (m *module) routes() http.Handler {
 		}
 	})
 
+	// Any other path.
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		refuse(w, r, RouteNotFound.
 			New("this module serves no route at "+r.URL.Path).
@@ -472,6 +519,9 @@ func (m *module) routes() http.Handler {
 
 var errOperationDenied = errors.New("permission denied for this operation")
 
+// check asks the host whether a person may do an action on an object, for
+// example `operate` on a printer. It answers errOperationDenied for a refusal
+// and for a call with no person, and the host's own error when it cannot answer.
 func (m *module) check(ctx context.Context, principal, action, objectType, id string) error {
 	if principal == "" {
 		return errOperationDenied
@@ -488,10 +538,14 @@ func (m *module) check(ctx context.Context, principal, action, objectType, id st
 	return nil
 }
 
+// allowed is check as a yes or no. A question the host could not answer counts
+// as no.
 func (m *module) allowed(ctx context.Context, principal, action, objectType, id string) bool {
 	return m.check(ctx, principal, action, objectType, id) == nil
 }
 
+// requireOperate answers true when the caller may operate the printer. It
+// writes the refusal itself otherwise, so a route just returns on false.
 func (m *module) requireOperate(w http.ResponseWriter, r *http.Request, deviceID string) bool {
 	if m.allowed(r.Context(), routesapi.PrincipalOf(r), "operate", "device", deviceID) {
 		return true
@@ -500,6 +554,9 @@ func (m *module) requireOperate(w http.ResponseWriter, r *http.Request, deviceID
 	return false
 }
 
+// authorizeDispatch is the check made when a job is about to start, as the
+// person who queued it: they must still be able to operate the printer and, for
+// a file in storage, to read the storage.
 func (m *module) authorizeDispatch(ctx context.Context, job Job) error {
 	if err := m.check(ctx, job.AddedBy, "operate", "device", job.DeviceID); err != nil {
 		return err
@@ -510,6 +567,8 @@ func (m *module) authorizeDispatch(ctx context.Context, job Job) error {
 	return nil
 }
 
+// changeJob runs a change on one job of the URL after checking that the caller
+// can see the job's printer and may operate it, and answers the change's result.
 func (m *module) changeJob(w http.ResponseWriter, r *http.Request, write func(*Store, Job) error) {
 	store := m.ready(w, r)
 	if store == nil {
@@ -526,6 +585,8 @@ func (m *module) changeJob(w http.ResponseWriter, r *http.Request, write func(*S
 	}
 }
 
+// writeResult turns the error of a change into the matching refusal, or a 204
+// when there is none.
 func (m *module) writeResult(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case err == nil:
@@ -542,6 +603,8 @@ func (m *module) writeResult(w http.ResponseWriter, r *http.Request, err error) 
 	}
 }
 
+// decode reads a JSON body of at most 64 KiB, and refuses the request itself
+// when it cannot.
 func decode(w http.ResponseWriter, r *http.Request, into any) bool {
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(into); err != nil {
 		refuse(w, r, BadRequest.New("the body is not the JSON this route reads: "+err.Error()))
@@ -552,6 +615,7 @@ func decode(w http.ResponseWriter, r *http.Request, into any) bool {
 	return true
 }
 
+// answer writes a JSON body with a status.
 func answer(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -559,6 +623,7 @@ func answer(w http.ResponseWriter, status int, body any) {
 	_ = json.NewEncoder(w).Encode(body)
 }
 
+// stdio is the host's channel: standard input and output of the process.
 type stdio struct{}
 
 func (stdio) Read(p []byte) (int, error)  { return os.Stdin.Read(p) }

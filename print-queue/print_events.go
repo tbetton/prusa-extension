@@ -1,3 +1,13 @@
+// The follower of the host's event stream.
+//
+// The scheduler does not wait for a printer call to tell it how a print went.
+// It subscribes to the host's events (transfer settled, command settled, job
+// started, job settled), and each event moves the matching job one step:
+//
+//	transfer done -> start command requested -> job started -> job settled
+//
+// Every window of events and the cursor after it are saved in one write, so a
+// restart resumes exactly where the last write stopped and misses nothing.
 package main
 
 import (
@@ -10,7 +20,10 @@ import (
 	"github.com/prusa3d/prusa-connect/sdk/wirerpc"
 )
 
-// follow resumes from the same snapshot that holds the job transitions.
+// follow keeps one subscription to the host's events open for as long as the
+// module runs, and opens it again, one second later, whenever it ends. Each
+// time it resumes from the cursor saved with the jobs. While it is not
+// subscribed, `following` is false and no job starts.
 func (sc *Scheduler) follow(ctx context.Context, conn *wirerpc.Conn) {
 	params := busapi.SubscribeParams{Types: []string{
 		event.TypeDeviceCommandRequested, event.TypeDeviceCommandSettled,
@@ -50,6 +63,10 @@ func (sc *Scheduler) follow(ctx context.Context, conn *wirerpc.Conn) {
 	}
 }
 
+// applyWindow applies one batch of events and saves the new cursor together
+// with the jobs it changed. A window marked Resync means events may have been
+// lost, so every job in flight is held as unconfirmed for a person to check on
+// the printer.
 func (sc *Scheduler) applyWindow(window busapi.Window) error {
 	sc.mu.Lock()
 	defer sc.mu.Unlock()
@@ -76,6 +93,11 @@ func (sc *Scheduler) applyWindow(window busapi.Window) error {
 	})
 }
 
+// applyPrintEvent moves the jobs of the printer an event came from. An event
+// matches a job only through the ids the job already carries (transfer id,
+// command id, print id), never by file name alone, so two prints of the same
+// file cannot be mixed up. A job held as unconfirmed still accepts the start
+// and end events of its print, which is how it recovers by itself.
 func applyPrintEvent(data *snapshot, frame event.Envelope) {
 	_, origin, err := event.ParseSourceURN(frame.Source)
 	if err != nil || origin.Kind() != event.KindDevice {
@@ -141,12 +163,16 @@ func applyPrintEvent(data *snapshot, frame event.Envelope) {
 	}
 }
 
+// markPrinting records that the printer has started the job's print.
 func markPrinting(job *Job) {
 	job.Status = statusPrinting
 	job.EndedAt = nil
 	job.setDetail("")
 }
 
+// settlePrint ends a job with the outcome the printer reported: finished is
+// done, cancelled is stopped, failed is failed. Any other outcome is not
+// trusted, and the job is held as unconfirmed instead.
 func settlePrint(data *snapshot, job *Job, ended time.Time, outcome string) {
 	switch outcome {
 	case event.JobFinished:

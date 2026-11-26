@@ -12,6 +12,9 @@ const BASE = (() => {
 })();
 
 
+// What the module's routes answer. These types mirror the Go structs of the
+// module (Job, View) and openapi.json.
+
 export interface Job {
   id: string;
   device_id: string;
@@ -37,6 +40,7 @@ export interface Queue {
   problem?: string;
 }
 
+/** A refusal of one of the module's routes: the HTTP status and the fault code. */
 export class QueueError extends Error {
   constructor(
     readonly status: number,
@@ -47,6 +51,7 @@ export class QueueError extends Error {
   }
 }
 
+/** Reads a refusal's problem document, and never throws. */
 const refusal = async (response: Response): Promise<QueueError> => {
   try {
     const problem = (await response.json()) as { code?: unknown; detail?: unknown } | null;
@@ -60,6 +65,7 @@ const refusal = async (response: Response): Promise<QueueError> => {
   }
 };
 
+/** One request to a route of the module, as JSON, with the session cookie. */
 const call = async <T>(
   method: string,
   route: string,
@@ -79,6 +85,8 @@ const call = async <T>(
 
   return (await response.json()) as T;
 };
+
+// The queue: list, add, remove, reorder, schedule, requeue, hold.
 
 export const listJobs = (device: string | undefined, signal?: AbortSignal): Promise<Queue> =>
   call<Queue>('GET', device ? `/jobs?device=${encodeURIComponent(device)}` : '/jobs', undefined, signal);
@@ -239,6 +247,7 @@ export const setInboxFolder = (deviceId: string, folder: string): Promise<void> 
 export const setInboxAuto = (deviceId: string, enabled: boolean): Promise<void> =>
   call('PUT', `/devices/${encodeURIComponent(deviceId)}/inbox-auto`, { enabled });
 
+/** Confirms the plate is empty and asks the printer to become READY. */
 export const markPrinterReady = (deviceId: string): Promise<void> =>
   call('POST', `/devices/${encodeURIComponent(deviceId)}/ready`, { plate_empty: true });
 
