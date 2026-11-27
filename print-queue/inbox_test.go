@@ -48,7 +48,7 @@ func TestInboxScan(t *testing.T) {
 	m := &module{
 		inboxStorage: "local",
 		inboxFolder:  "print-queue",
-		list: func(_ context.Context, storage, folder string) ([]storageapi.ListEntry, error) {
+		list: func(_ context.Context, _, storage, folder string) ([]storageapi.ListEntry, error) {
 			if storage != "local" {
 				return nil, errors.New("no such storage")
 			}
@@ -71,7 +71,7 @@ func TestInboxScan(t *testing.T) {
 
 	device := deviceapi.Device{ID: "p1", Name: "Core One"}
 
-	view, err := m.inboxScan(context.Background(), device, store, now)
+	view, err := m.inboxScan(context.Background(), "user:operator", device, store, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestInboxScan(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	view, err = m.inboxScan(context.Background(), device, store, now)
+	view, err = m.inboxScan(context.Background(), "user:operator", device, store, now)
 	if err != nil || len(view.Items) != 1 || view.Items[0].Name != "older.bgcode" {
 		t.Fatalf("a handled file is not offered again: %+v %v", view, err)
 	}
@@ -97,13 +97,13 @@ func TestInboxScan(t *testing.T) {
 	// The same name saved again is a new file.
 	files[1].MTime = old + 50
 
-	view, err = m.inboxScan(context.Background(), device, store, now)
+	view, err = m.inboxScan(context.Background(), "user:operator", device, store, now)
 	if err != nil || len(view.Items) != 2 {
 		t.Fatalf("a file saved again is offered again: %+v %v", view, err)
 	}
 
 	// A printer with no folder of its own has an empty inbox.
-	view, err = m.inboxScan(context.Background(), deviceapi.Device{ID: "p9", Name: "Other"}, store, now)
+	view, err = m.inboxScan(context.Background(), "user:operator", deviceapi.Device{ID: "p9", Name: "Other"}, store, now)
 	if err != nil || len(view.Items) != 0 || view.Folder != "print-queue/Other" {
 		t.Fatalf("unexpected inbox for a printer with no folder: %+v %v", view, err)
 	}
@@ -174,7 +174,7 @@ func TestInboxFolderChoice(t *testing.T) {
 	m := &module{
 		inboxStorage: "local",
 		inboxFolder:  "print-queue",
-		list: func(_ context.Context, _, folder string) ([]storageapi.ListEntry, error) {
+		list: func(_ context.Context, _, _, folder string) ([]storageapi.ListEntry, error) {
 			switch folder {
 			case "":
 				return []storageapi.ListEntry{{Name: "COREONEINDX", Dir: true}, {Name: "queue", Dir: true}}, nil
@@ -193,7 +193,7 @@ func TestInboxFolderChoice(t *testing.T) {
 
 	device := deviceapi.Device{ID: "p1", Name: "COREONEINDX"}
 
-	view, err := m.inboxScan(context.Background(), device, store, now)
+	view, err := m.inboxScan(context.Background(), "user:operator", device, store, now)
 	if err != nil || view.Folder != "COREONEINDX" || view.Custom || len(view.Items) != 1 ||
 		view.Items[0].Path != "COREONEINDX/a.bgcode" {
 		t.Fatalf("a folder named after the printer at the root is found: %+v %v", view, err)
@@ -203,7 +203,7 @@ func TestInboxFolderChoice(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	view, err = m.inboxScan(context.Background(), device, store, now)
+	view, err = m.inboxScan(context.Background(), "user:operator", device, store, now)
 	if err != nil || view.Folder != "queue" || !view.Custom || len(view.Items) != 1 {
 		t.Fatalf("the folder a person chose wins: %+v %v", view, err)
 	}
@@ -212,7 +212,7 @@ func TestInboxFolderChoice(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	view, err = m.inboxScan(context.Background(), device, store, now)
+	view, err = m.inboxScan(context.Background(), "user:operator", device, store, now)
 	if err != nil || view.Folder != "not/there" || len(view.Items) != 0 {
 		t.Fatalf("a chosen folder that does not exist yet is an empty inbox: %+v %v", view, err)
 	}
@@ -233,5 +233,124 @@ func TestCleanInboxFolder(t *testing.T) {
 		if _, ok := cleanInboxFolder(in); ok {
 			t.Fatalf("cleanInboxFolder(%q) should be refused", in)
 		}
+	}
+}
+
+func TestTheInboxIsListedForThePersonAsking(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0)
+	old := now.Add(-time.Hour).Unix()
+
+	var asked []string
+
+	m := &module{
+		inboxStorage: "local",
+		inboxFolder:  "print-queue",
+		list: func(_ context.Context, principal, _, folder string) ([]storageapi.ListEntry, error) {
+			asked = append(asked, principal)
+
+			// Only alice may read the storage.
+			if principal != "user:alice" {
+				return nil, errors.New("not allowed to read the storage")
+			}
+
+			switch folder {
+			case "print-queue":
+				return []storageapi.ListEntry{{Name: "Core One", Dir: true}}, nil
+			case "print-queue/Core One", "secret":
+				return []storageapi.ListEntry{{Name: "a.bgcode", Size: 10, MTime: old}}, nil
+			}
+
+			return nil, errors.New("no such folder")
+		},
+	}
+
+	store, err := OpenStore("", time.Now, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	device := deviceapi.Device{ID: "p1", Name: "Core One"}
+
+	view, err := m.inboxScan(context.Background(), "user:alice", device, store, now)
+	if err != nil || len(view.Items) != 1 {
+		t.Fatalf("a person who may read the storage sees the files: %+v %v", view, err)
+	}
+
+	for _, who := range asked {
+		if who != "user:alice" {
+			t.Fatalf("the storage was listed for %q, want the person asking", who)
+		}
+	}
+
+	// A person who may operate the printer but not read the storage sees
+	// nothing, whether the folder is found by name or chosen by hand.
+	for _, folder := range []string{"", "secret"} {
+		if err = store.SetInboxFolder("p1", folder); err != nil {
+			t.Fatal(err)
+		}
+
+		view, err = m.inboxScan(context.Background(), "user:bob", device, store, now)
+		if err != nil || len(view.Items) != 0 {
+			t.Fatalf("a person who may not read the storage sees files in %q: %+v %v", folder, view, err)
+		}
+	}
+}
+
+func TestChangingTheFolderTurnsTheAutomaticAddingOff(t *testing.T) {
+	store, err := OpenStore("", time.Now, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err = store.SetInboxFolder("p1", "uploads"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err = store.SetAutoAdd("p1", "user:alice", true); err != nil {
+		t.Fatal(err)
+	}
+
+	// The same folder again changes nothing.
+	if err = store.SetInboxFolder("p1", "uploads"); err != nil {
+		t.Fatal(err)
+	}
+
+	if who, ok := store.AutoAddOf("p1"); !ok || who != "user:alice" {
+		t.Fatalf("the same folder must keep the automatic adding: %q %v", who, ok)
+	}
+
+	// Another person aims the printer at another folder: it stops.
+	if err = store.SetInboxFolder("p1", "elsewhere"); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, ok := store.AutoAddOf("p1"); ok {
+		t.Fatal("a new folder must turn the automatic adding off")
+	}
+
+	// Going back to the automatic folder is a change too.
+	if err = store.SetAutoAdd("p1", "user:alice", true); err != nil {
+		t.Fatal(err)
+	}
+
+	if err = store.SetInboxFolder("p1", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, ok := store.AutoAddOf("p1"); ok {
+		t.Fatal("going back to the automatic folder must turn the automatic adding off")
+	}
+
+	// The printers do not affect each other.
+	if err = store.SetAutoAdd("p2", "user:bob", true); err != nil {
+		t.Fatal(err)
+	}
+
+	if err = store.SetInboxFolder("p1", "x"); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, ok := store.AutoAddOf("p2"); !ok {
+		t.Fatal("another printer's automatic adding must stay")
 	}
 }
