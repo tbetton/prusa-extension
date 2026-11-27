@@ -57,11 +57,12 @@ queued --> starting --> printing --> done
 
 1. **Add.** `POST /jobs` checks that the person may operate the printer and, for a file in storage, read it. The job joins the end of the queue as `queued`.
 2. **Tick.** Every `poll_seconds`, `Scheduler.Tick` looks at each printer that has work. For each one, `tickDevice` first settles what it can from the printer's data (`syncPrints`).
-3. **Pick.** A queued job is picked only if the printer is connected and reports `READY`, nothing else is starting or printing on it, its queue is not held, no manual ready mark is still waiting for the printer to confirm, and the job's start time has come. The job is saved as `starting` before the printer is called, so a crash cannot lose the attempt.
-4. **Start.** `Scheduler.start` checks the rights of the person who queued the job again, then asks the host to print. A file from storage is sent first, under a unique name, and then started.
-5. **Follow.** `print_events.go` reads the host's events: the transfer settles, the start command is requested and settles, the job starts (the printer reports a print id) and settles (finished, cancelled or failed). Each event moves the matching job, matched by the ids the job carries.
-6. **Recover.** If events are missed, `print_history.go` compares the jobs with the current print, the last print and the job history. A job with no print id is matched only when its path and start time identify exactly one print.
-7. **Hold when unsure.** A job that lost track of its print becomes `failed` with the detail `unconfirmed`, and the printer's queue is held. A person checks the printer and resumes. If the print's events arrive later, the job recovers by itself.
+3. **Copy ahead (optional).** While the printer is not ready, `stageNext` copies the file of the job that will start next onto the printer, without starting it (`prestage`). The transfer settles through the event stream, and the job is marked `staged`. A failed or stale copy is forgotten, and the file is then sent when the print starts. At most two copies stay on a printer.
+4. **Pick.** A queued job is picked only if the printer is connected and reports `READY`, nothing else is starting or printing on it, its queue is not held, no manual ready mark is still waiting for the printer to confirm, and the job's start time has come. The job is saved as `starting` before the printer is called, so a crash cannot lose the attempt.
+5. **Start.** `Scheduler.start` checks the rights of the person who queued the job again, then asks the host to print. A file from storage is sent first, under a unique name, and then started. A staged job is printed from its copy on the printer, and nothing is sent. A job whose copy is still travelling waits for it.
+6. **Follow.** `print_events.go` reads the host's events: the transfer settles, the start command is requested and settles, the job starts (the printer reports a print id) and settles (finished, cancelled or failed). Each event moves the matching job, matched by the ids the job carries.
+7. **Recover.** If events are missed, `print_history.go` compares the jobs with the current print, the last print and the job history. A job with no print id is matched only when its path and start time identify exactly one print.
+8. **Hold when unsure.** A job that lost track of its print becomes `failed` with the detail `unconfirmed`, and the printer's queue is held. A person checks the printer and resumes. If the print's events arrive later, the job recovers by itself.
 
 ## Permissions
 
@@ -95,7 +96,7 @@ All text goes through `host.t` and `src/locales/en.json`. Do not write a sentenc
 ## Building and testing
 
 ```sh
-git clone --depth 1 --branch sdk/v0.1.0-beta.1 https://github.com/prusa3d/prusa-connect.git .core
+git clone --depth 1 --branch sdk/v0.1.0-beta.2 https://github.com/prusa3d/prusa-connect.git .core
 go vet ./... && go test -race ./...
 BUILD_ONLY=1 sh install.sh
 ```

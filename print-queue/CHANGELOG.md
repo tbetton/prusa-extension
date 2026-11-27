@@ -7,6 +7,12 @@ Write the entry in the same change as the code. One bullet per behaviour a
 person outside this repository can observe: a route, a setting, a screen, a
 refusal. Name the route and the setting key, never a function or a file.
 
+## 0.3.4
+
+- Copy the next queued file onto the printer while it waits, without starting it. When the printer reports READY, the print starts at once from that copy, with no transfer to wait for. The job shows "Copied to the printer". If the copy fails, the file is sent when the print starts, as before.
+- Add the setting `prestage` (default on) to turn this off. At most two files stay copied ahead of time on a printer.
+- Require the core 0.1.0-beta.2 and the `core-device.send` capability. Approve it when you upgrade.
+
 ## 0.3.3
 
 - No change in behaviour. The source is documented throughout, and `ARCHITECTURE.md` explains how the code is organised and how a print moves through it.

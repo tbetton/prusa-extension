@@ -84,6 +84,16 @@ type Job struct {
 	TransferDone bool   `json:"transfer_done,omitempty"`
 	CommandID    string `json:"command_id,omitempty"`
 	PrintID      string `json:"print_id,omitempty"`
+
+	// The copy made ahead of time. While the job waits for the printer to be
+	// ready, the file of the next job is already copied onto the printer, so
+	// the print starts at once. StagedPath is where the copy goes on the
+	// printer. StageTransferID names the transfer until it settles, and Staged
+	// says the copy has landed. StagedAt is when the copy was asked for.
+	StagedPath      string     `json:"staged_path,omitempty"`
+	StageTransferID string     `json:"stage_transfer_id,omitempty"`
+	Staged          bool       `json:"staged,omitempty"`
+	StagedAt        *time.Time `json:"staged_at,omitempty"`
 }
 
 var jobDetails = map[string]string{
@@ -118,6 +128,28 @@ var legacyJobDetails = map[string]string{
 func (j *Job) setDetail(code string) {
 	j.DetailCode = code
 	j.Detail = jobDetails[code]
+}
+
+// stageTimeout is how long a copy ahead of time may stay unsettled before the
+// job forgets it and the file is sent again when the print starts.
+const stageTimeout = 10 * time.Minute
+
+// stageRetryAfter is how long the scheduler leaves a job alone after a copy
+// ahead of time failed, for example because the printer was busy receiving
+// another file.
+const stageRetryAfter = time.Minute
+
+// maxStaged bounds the files copied ahead of time for one printer, so a queue
+// that is reordered does not fill the printer's drive.
+const maxStaged = 2
+
+// resetStaging forgets the copy ahead of time. The file may still be on the
+// printer, but the job no longer relies on it.
+func (j *Job) resetStaging() {
+	j.StagedPath = ""
+	j.StageTransferID = ""
+	j.Staged = false
+	j.StagedAt = nil
 }
 
 // finished says whether the job has left the queue for good.
@@ -460,6 +492,7 @@ func (s *Store) Requeue(id, principal string) error {
 		job.TransferDone = false
 		job.CommandID = ""
 		job.PrintID = ""
+		job.resetStaging()
 		job.AddedBy = principal
 		job.StartedAt = nil
 		job.EndedAt = nil
@@ -514,6 +547,7 @@ func newID() string {
 type fleet interface {
 	Get(ctx context.Context, params deviceapi.GetParams) (deviceapi.Device, error)
 	Print(ctx context.Context, params deviceapi.PrintParams) (deviceapi.Started, error)
+	Send(ctx context.Context, params deviceapi.SendParams) (deviceapi.Sent, error)
 	Jobs(ctx context.Context, params deviceapi.JobsParams) (deviceapi.Jobs, error)
 	JobHistory(ctx context.Context, params deviceapi.JobHistoryParams) (deviceapi.JobPage, error)
 }
@@ -538,6 +572,10 @@ type Scheduler struct {
 	// following is true once the host's event stream is being read. No job
 	// starts before that, so a print is never started blind.
 	following bool
+	// prestage turns on the copy of the next file onto the printer ahead of
+	// time. stageRetry holds, by job, when a failed copy may be tried again.
+	prestage   bool
+	stageRetry map[string]time.Time
 }
 
 // printerState reads the printer's own word for what it is doing.
@@ -628,6 +666,12 @@ func (sc *Scheduler) tickDevice(ctx context.Context, deviceID string) {
 			}
 
 			switch job.Status {
+			case statusQueued:
+				// A copy that never settled is forgotten: the file is then
+				// sent as usual when the print starts.
+				if job.StagedPath != "" && !job.Staged && job.StagedAt != nil && now.Sub(*job.StagedAt) > stageTimeout {
+					job.resetStaging()
+				}
 			case statusStarting:
 				busy = true
 				if job.TransferID == "" && job.CommandID == "" {
@@ -669,6 +713,11 @@ func (sc *Scheduler) tickDevice(ctx context.Context, deviceID string) {
 		if state != printerReady || guarded {
 			return nil
 		}
+		// A copy ahead of time is still travelling: wait for it, so the file is
+		// not sent twice.
+		if job.StageTransferID != "" && !job.Staged {
+			return nil
+		}
 		// Save the attempt before any printer call, including the unique
 		// upload destination if the file lives in server storage.
 		job.Status = statusStarting
@@ -676,7 +725,12 @@ func (sc *Scheduler) tickDevice(ctx context.Context, deviceID string) {
 		job.setDetail("")
 		job.PrinterPath = job.Path
 		if job.Storage != "" {
-			job.PrinterPath = path.Join(sc.folder, newID()+"-"+path.Base(job.Path))
+			if job.Staged && job.StagedPath != "" {
+				// The file is already on the printer: print that copy.
+				job.PrinterPath = job.StagedPath
+			} else {
+				job.PrinterPath = path.Join(sc.folder, newID()+"-"+path.Base(job.Path))
+			}
 		}
 		copied := *job
 		next = &copied
@@ -690,6 +744,151 @@ func (sc *Scheduler) tickDevice(ctx context.Context, deviceID string) {
 
 	if next != nil {
 		sc.start(ctx, *next)
+
+		return
+	}
+
+	// Nothing starts now: use the wait to copy the next file onto the printer.
+	if available {
+		sc.stageNext(ctx, deviceID, now)
+	}
+}
+
+// stageNext copies the file of the job that will start next onto the printer,
+// without starting it, while the printer is not ready yet. When the printer
+// reports READY, the print then starts at once and the transfer is already
+// done.
+//
+// It copies at most one file at a time for a printer, never while a job is
+// being sent or held, and only a file from storage (a file already on the
+// printer needs no copy). The attempt is saved before the printer is asked, as
+// for a start, and a failure leaves the job as it was: the file is then sent
+// when the print starts, as before.
+func (sc *Scheduler) stageNext(ctx context.Context, deviceID string, now time.Time) {
+	if !sc.prestage {
+		return
+	}
+
+	if sc.stageRetry == nil {
+		sc.stageRetry = map[string]time.Time{}
+	}
+
+	var picked *Job
+
+	err := sc.store.update(func(data *snapshot) error {
+		if data.Paused[deviceID] {
+			return nil
+		}
+
+		staged := 0
+
+		for i := range data.Jobs {
+			job := &data.Jobs[i]
+			if job.DeviceID != deviceID {
+				continue
+			}
+
+			if job.Status == statusStarting {
+				return nil
+			}
+
+			if job.Status == statusQueued && job.StagedPath != "" {
+				staged++
+			}
+		}
+
+		next := data.nextQueued(deviceID, now)
+		if next == nil || next.Storage == "" || next.StagedPath != "" || staged >= maxStaged {
+			return nil
+		}
+
+		if retry, ok := sc.stageRetry[next.ID]; ok && now.Before(retry) {
+			return nil
+		}
+
+		// One copy at a time: a copy still travelling for another job of this
+		// printer would make the printer refuse this one.
+		for i := range data.Jobs {
+			job := &data.Jobs[i]
+			if job.DeviceID == deviceID && job.StageTransferID != "" && !job.Staged {
+				return nil
+			}
+		}
+
+		next.StagedPath = path.Join(sc.folder, newID()+"-"+path.Base(next.Path))
+		next.Staged = false
+		next.StageTransferID = ""
+		next.StagedAt = &now
+		copied := *next
+		picked = &copied
+
+		return nil
+	})
+	if err != nil {
+		sc.logf("save the queue: %v", err)
+
+		return
+	}
+
+	if picked == nil {
+		return
+	}
+
+	denied := sc.authorize(ctx, *picked)
+
+	var (
+		sent    deviceapi.Sent
+		sendErr error
+	)
+
+	if denied == nil {
+		sent, sendErr = sc.fleet.Send(ctx, deviceapi.SendParams{
+			ID: picked.DeviceID, Path: picked.StagedPath, Storage: picked.Storage, Source: picked.Path,
+		})
+	}
+
+	failed := denied != nil || sendErr != nil
+	if failed {
+		wait := stageRetryAfter
+		if denied != nil {
+			// The person may have lost the right. The start will say so.
+			wait = 10 * stageRetryAfter
+		}
+
+		sc.stageRetry[picked.ID] = now.Add(wait)
+		sc.logf("copy %s to printer %s ahead of time: %v", picked.Path, picked.DeviceID, errors.Join(denied, sendErr))
+	}
+
+	if err = sc.store.update(func(data *snapshot) error {
+		i := indexOf(data.Jobs, picked.ID)
+		if i < 0 {
+			return errNoJob
+		}
+
+		current := &data.Jobs[i]
+		// The job started, was requeued or was changed while the printer was
+		// asked: leave it as it is.
+		if current.Status != statusQueued || current.StagedPath != picked.StagedPath {
+			return nil
+		}
+
+		switch {
+		case failed:
+			current.resetStaging()
+		case sent.TransferID == "":
+			// The printer already held this file.
+			current.Staged = true
+		default:
+			current.StageTransferID = sent.TransferID
+		}
+
+		if !failed && sent.Path != "" {
+			current.StagedPath = sent.Path
+		}
+
+		return nil
+	}); err != nil && !errors.Is(err, errNoJob) {
+		sc.logf("save the copy of job %s: %v", picked.ID, err)
 	}
 }
 
@@ -710,7 +909,9 @@ func holdUnconfirmed(data *snapshot, job *Job, now time.Time) {
 // the events then carry the job to `printing` and to its end.
 func (sc *Scheduler) start(ctx context.Context, job Job) {
 	params := deviceapi.PrintParams{ID: job.DeviceID, Path: job.PrinterPath}
-	if job.Storage != "" {
+	// A file copied ahead of time is already on the printer: it is printed
+	// where it is, and nothing is sent.
+	if job.Storage != "" && !job.Staged {
 		params.Storage = job.Storage
 		params.Source = job.Path
 	}
@@ -745,6 +946,16 @@ func (sc *Scheduler) start(ctx context.Context, job Job) {
 		}
 		if printErr != nil {
 			now := sc.now().UTC()
+			if job.Staged && errors.Is(printErr, deviceapi.ErrNoFile) {
+				// The copy ahead of time is gone from the printer. Send the file
+				// again, as for a job that was never copied.
+				current.resetStaging()
+				current.Status = statusQueued
+				current.StartedAt = nil
+				current.PrinterPath = ""
+
+				return nil
+			}
 			if errors.Is(printErr, deviceapi.ErrPrintFailed) || errors.Is(printErr, context.Canceled) ||
 				errors.Is(printErr, context.DeadlineExceeded) {
 				holdUnconfirmed(data, current, now)

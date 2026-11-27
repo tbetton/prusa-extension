@@ -29,6 +29,10 @@ export interface Job {
   detail_code?: string;
   printer_path?: string;
   print_id?: string;
+  /** The file was copied onto the printer ahead of time. */
+  staged?: boolean;
+  /** The copy ahead of time is still travelling. */
+  stage_transfer_id?: string;
   started_at?: string;
   ended_at?: string;
 }
