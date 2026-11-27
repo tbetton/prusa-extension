@@ -48,7 +48,7 @@ import (
 
 const (
 	name    = "print-queue"
-	release = extension.Version("0.3.5")
+	release = extension.Version("0.3.6")
 )
 
 // Settings is what an operator writes under this instance's config block. The
