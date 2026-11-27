@@ -7,6 +7,10 @@ Write the entry in the same change as the code. One bullet per behaviour a
 person outside this repository can observe: a route, a setting, a screen, a
 refusal. Name the route and the setting key, never a function or a file.
 
+## 0.3.6
+
+- Make Print Queue available for installation from the stable channel in the Prusa Connect Local Extensions catalogue. The code is the same as 0.3.5.
+
 ## 0.3.5
 
 - List the inbox of a printer with the rights of the person asking. A person who may operate a printer but may not read the storage now sees an empty inbox, whatever folder is set with `PUT /devices/{id}/inbox-folder`.
