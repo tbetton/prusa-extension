@@ -7,6 +7,12 @@ Write the entry in the same change as the code. One bullet per behaviour a
 person outside this repository can observe: a route, a setting, a screen, a
 refusal. Name the route and the setting key, never a function or a file.
 
+## 0.3.5
+
+- List the inbox of a printer with the rights of the person asking. A person who may operate a printer but may not read the storage now sees an empty inbox, whatever folder is set with `PUT /devices/{id}/inbox-folder`.
+- Turn the automatic adding of a printer off whenever its folder changes. The files are queued as the person who turned it on and listed with that person's rights, so nobody else can aim it at another folder. Turn it on again after a change.
+- Stop changing the folder from the page by itself. When the PrusaSlicer 2 Connector saves to another folder than the one Print Queue reads, the page says so and **Read that folder** changes it, only when asked.
+
 ## 0.3.4
 
 - Copy the next queued file onto the printer while it waits, without starting it. When the printer reports READY, the print starts at once from that copy, with no transfer to wait for. The job shows "Copied to the printer". If the copy fails, the file is sent when the print starts, as before.

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "print-queue",
-    "version": "0.3.4",
+    "version": "0.3.5",
     "description": "A queue of prints for each printer. Every path is relative to the mount the host assigns."
   },
   "components": {
@@ -137,7 +137,7 @@
       "put": {
         "operationId": "set-inbox-folder",
         "summary": "Choose the folder of a printer's uploads",
-        "description": "Requires permission to operate the printer. The folder is relative to the inbox storage. An empty folder goes back to the folder named after the printer, under the inbox folder or at the root of the storage.",
+        "description": "Requires permission to operate the printer. The folder is relative to the inbox storage. An empty folder goes back to the folder named after the printer, under the inbox folder or at the root of the storage. A change of folder turns the automatic adding of the printer off.",
         "parameters": [
           {
             "name": "id",
@@ -192,7 +192,7 @@
       "get": {
         "operationId": "get-printer-inbox",
         "summary": "Files PrusaSlicer left for a printer",
-        "description": "Requires permission to operate the printer. Lists the printable files in the printer's folder of the inbox storage that were neither added to a queue nor ignored.",
+        "description": "Requires permission to operate the printer. Lists the printable files in the printer's folder of the inbox storage that were neither added to a queue nor ignored. The storage is listed for the caller, so a caller who may not read it gets an empty list.",
         "parameters": [
           {
             "name": "id",
@@ -230,7 +230,7 @@
       "post": {
         "operationId": "dismiss-inbox-file",
         "summary": "Ignore a file of a printer's inbox",
-        "description": "Requires permission to operate the printer. The file is offered again only if it is saved again.",
+        "description": "Requires permission to operate the printer. The file is offered again only if it is saved again. The folder is read for the caller, as for the listing.",
         "parameters": [
           {
             "name": "id",
@@ -285,7 +285,7 @@
       "put": {
         "operationId": "set-inbox-auto",
         "summary": "Add a printer's new uploads to its queue by themselves",
-        "description": "Requires permission to operate the printer. The files are queued as the caller, and only while the caller may still operate the printer and read the storage.",
+        "description": "Requires permission to operate the printer. The caller becomes the person the files are queued for: the folder is listed with the caller's rights, and the files are queued as the caller, only while the caller may still operate the printer and read the storage. A change of folder turns it off.",
         "parameters": [
           {
             "name": "id",

@@ -48,7 +48,7 @@ import (
 
 const (
 	name    = "print-queue"
-	release = extension.Version("0.3.4")
+	release = extension.Version("0.3.5")
 )
 
 // Settings is what an operator writes under this instance's config block. The
@@ -130,7 +130,7 @@ type module struct {
 	// folder for each printer under it.
 	inboxStorage string
 	inboxFolder  string
-	list         func(ctx context.Context, storage, folder string) ([]storageapi.ListEntry, error)
+	list         func(ctx context.Context, principal, storage, folder string) ([]storageapi.ListEntry, error)
 	inboxLogged  time.Time
 }
 

@@ -114,10 +114,10 @@
   "print-queue.howTo.steps.install": "Install the PrusaSlicer 2 Connector extension in Settings, Extensions. Print Queue works without it.",
   "print-queue.howTo.steps.card": "Open a printer's page, its Printer tab, and the PrusaSlicer 2 Connector card under Connection. Press Create an API key and copy the address and the key.",
   "print-queue.howTo.steps.slicer": "In PrusaSlicer, press Add physical printer. Set Host Type to PrusaLink, paste the address, set Authorization Type to API key and paste the key. Press Test.",
-  "print-queue.howTo.steps.save": "In Print Queue, press Set up PrusaSlicer uploads on the printer's card. It turns on Save to storage on the connector for that printer and picks its folder, print-queue followed by the printer's name. You can also pick the storage and the folder yourself on the connector's card: Print Queue then reads the folder it shows.",
+  "print-queue.howTo.steps.save": "In Print Queue, press Set up PrusaSlicer uploads on the printer's card. It turns on Save to storage on the connector for that printer and picks its folder, print-queue followed by the printer's name. You can also pick the storage and the folder yourself on the connector's card: Print Queue then offers to read the folder it shows.",
   "print-queue.howTo.steps.queue": "Slice, then press Upload in PrusaSlicer. Do not press Upload and Print: that starts the file at once and skips the queue.",
   "print-queue.howTo.steps.add": "In Print Queue, the printer's card shows the new files under From PrusaSlicer. Press Add on a file, or turn on Add new uploads to the queue by themselves so that each upload joins the queue.",
-  "print-queue.howTo.limits": "The connector sends the file to the printer's drive as well, so the printer must be reachable when you press Upload, and a second upload sent while the printer is still receiving the first fails. It takes .gcode and .bgcode files only. A file saved again under the same name is offered again. Without the connector, type the folder in the Folder field of From PrusaSlicer. An administrator can change the default storage and folder with the inbox_storage and inbox_folder settings.",
+  "print-queue.howTo.limits": "The connector sends the file to the printer's drive as well, so the printer must be reachable when you press Upload, and a second upload sent while the printer is still receiving the first fails. It takes .gcode and .bgcode files only. A file saved again under the same name is offered again. You see the files of the inbox only if you may read the storage. Changing the folder of a printer turns its automatic adding off. Without the connector, type the folder in the Folder field of From PrusaSlicer. An administrator can change the default storage and folder with the inbox_storage and inbox_folder settings.",
   "print-queue.fault.STORAGE_UNAVAILABLE": "The storage could not be read. Try again.",
   "print-queue.inbox.title": "From PrusaSlicer",
   "print-queue.inbox.add": "Add",
@@ -137,5 +137,8 @@
   "print-queue.inbox.setupHint": "Saves this printer's uploads in {folder} of the storage {storage}, with Save to storage on the connector.",
   "print-queue.inbox.connectorLocked": "You may not change where the PrusaSlicer 2 Connector saves this printer's uploads.",
   "print-queue.job.staged": "Copied to the printer: it starts at once when the printer is ready.",
-  "print-queue.job.staging": "Copying to the printer…"
+  "print-queue.job.staging": "Copying to the printer…",
+  "print-queue.inbox.autoNote": "Changing the folder turns this off, and it must then be turned on again.",
+  "print-queue.inbox.connectorElsewhere": "The PrusaSlicer 2 Connector saves this printer's uploads in {folder}, which Print Queue does not read.",
+  "print-queue.inbox.useFolder": "Read that folder"
 }
