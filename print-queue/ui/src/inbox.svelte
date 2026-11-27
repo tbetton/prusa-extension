@@ -3,6 +3,11 @@
   Connector saves its uploads in. A person adds a file to the queue or
   ignores it, and may turn on the automatic adding for the printer.
 
+  The page never changes a folder by itself. When the connector saves to a
+  folder other than the one Print Queue reads, it says so and the person
+  chooses whether to read that folder. Changing a folder turns the automatic
+  adding off, so it must be turned on again on purpose.
+
   It draws nothing for a person who may not operate the printer, and nothing
   until the first answer.
 -->
@@ -49,23 +54,9 @@
 
   const load = async (): Promise<void> => {
     try {
-      let next = await getInbox(deviceId, host.signal);
+      // Only read: choosing a folder is the person's to do.
+      const next = await getInbox(deviceId, host.signal);
       const connector = await getConnectorKeep(deviceId, host.signal);
-      // The connector decides where the uploads go, so Print Queue reads there.
-      if (
-        connector?.on === true &&
-        connector.folder !== undefined &&
-        connector.folder !== '' &&
-        connector.storage === next.storage &&
-        connector.folder !== next.folder
-      ) {
-        try {
-          await setInboxFolder(deviceId, connector.folder);
-          next = await getInbox(deviceId, host.signal);
-        } catch {
-          // the next turn tries again
-        }
-      }
       inbox = next;
       keep = connector;
     } catch {
@@ -127,6 +118,30 @@
     }
   };
 
+  /** The connector saves to a folder of the storage Print Queue reads, other than the one it reads. */
+  const elsewhere = $derived(
+    inbox !== undefined &&
+      keep?.on === true &&
+      keep.folder !== undefined &&
+      keep.folder !== '' &&
+      keep.storage === inbox.storage &&
+      keep.folder !== inbox.folder,
+  );
+
+  // The person asked to read the folder the connector saves to.
+  const useConnectorFolder = async (): Promise<void> => {
+    if (keep?.folder === undefined) return;
+    busy = true;
+    try {
+      await setInboxFolder(deviceId, keep.folder);
+    } catch (error) {
+      toast.error(queueErrorText(error, t));
+    } finally {
+      busy = false;
+      await load();
+    }
+  };
+
   // Ask the connector to save this printer's uploads in the folder Print
   // Queue expects, and read that folder from now on.
   const setup = async (): Promise<void> => {
@@ -175,6 +190,20 @@
         {t('print-queue.inbox.auto')}
       </label>
     </div>
+    {#if inbox.auto}
+      <p class="text-xs text-muted-foreground">{t('print-queue.inbox.autoNote')}</p>
+    {/if}
+
+    {#if elsewhere && keep}
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="text-xs text-warning">
+          {t('print-queue.inbox.connectorElsewhere', { folder: keep.folder ?? '' })}
+        </span>
+        <Button size="sm" variant="secondary" disabled={busy} onclick={() => void useConnectorFolder()}>
+          {t('print-queue.inbox.useFolder')}
+        </Button>
+      </div>
+    {/if}
 
     {#if inbox.items.length > 0}
       <ul class="flex flex-col divide-y divide-border">

@@ -18,6 +18,14 @@ import (
 // PrusaSlicer 2 Connector saves each upload to a storage folder the operator
 // picks for that printer, and Print Queue reads the folder named after the
 // printer: <inbox_folder>/<printer name>.
+//
+// Access. Every listing of the storage is made for a person, never as the
+// module itself: the host then applies that person's right to read the
+// storage. A person who may operate a printer but may not read the storage sees
+// an empty inbox, whatever folder is set. The automatic adding lists as the
+// person who turned it on and queues as that person, and it is turned off
+// whenever the folder of the printer changes, so files from a folder nobody
+// agreed to are never queued under that person's name.
 
 const (
 	// inboxSettle is how long a file stays unchanged before the inbox offers
@@ -88,14 +96,17 @@ func sameFolder(entry, label, id string) bool {
 	return entry == id || normal(entry) == normal(label)
 }
 
-// listFolder reads every entry of one folder of a storage.
-func (m *module) listFolder(ctx context.Context, storage, folder string) ([]storageapi.ListEntry, error) {
+// listFolder reads every entry of one folder of a storage, for a person. The
+// host answers only what that person may read.
+func (m *module) listFolder(ctx context.Context, principal, storage, folder string) ([]storageapi.ListEntry, error) {
 	var all []storageapi.ListEntry
 
 	cursor := ""
 
 	for range inboxPages {
-		listing, err := m.files.List(ctx, storageapi.ListParams{Storage: storage, Path: folder, Cursor: cursor})
+		listing, err := m.files.List(ctx, storageapi.ListParams{
+			Principal: principal, Storage: storage, Path: folder, Cursor: cursor,
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -113,13 +124,14 @@ func (m *module) listFolder(ctx context.Context, storage, folder string) ([]stor
 }
 
 // findInboxFolder looks for the folder named after a printer, first under the
-// inbox folder and then at the root of the storage. It answers an empty path
-// when there is none.
-func (m *module) findInboxFolder(ctx context.Context, device deviceapi.Device) string {
+// inbox folder and then at the root of the storage, as the person asking. It
+// answers an empty path when there is none, or when that person may not read
+// the storage.
+func (m *module) findInboxFolder(ctx context.Context, principal string, device deviceapi.Device) string {
 	label := folderLabel(device)
 
 	for _, base := range []string{m.inboxFolder, ""} {
-		entries, err := m.list(ctx, m.inboxStorage, base)
+		entries, err := m.list(ctx, principal, m.inboxStorage, base)
 		if err != nil {
 			continue
 		}
@@ -155,9 +167,10 @@ func cleanInboxFolder(folder string) (string, bool) {
 	return folder, true
 }
 
-// inboxScan reads the folder of one printer. A folder that does not exist yet
-// is an empty inbox and not a failure.
-func (m *module) inboxScan(ctx context.Context, device deviceapi.Device, store *Store, now time.Time) (inboxView, error) {
+// inboxScan reads the folder of one printer, as `principal`. A folder that does
+// not exist yet, or that this person may not read, is an empty inbox and not a
+// failure, so a refusal tells nothing about what the folder holds.
+func (m *module) inboxScan(ctx context.Context, principal string, device deviceapi.Device, store *Store, now time.Time) (inboxView, error) {
 	view := inboxView{Storage: m.inboxStorage, Items: []inboxItem{}}
 	_, view.Auto = store.AutoAddOf(device.ID)
 
@@ -165,7 +178,7 @@ func (m *module) inboxScan(ctx context.Context, device deviceapi.Device, store *
 	view.Custom = view.Folder != ""
 
 	if !view.Custom {
-		view.Folder = m.findInboxFolder(ctx, device)
+		view.Folder = m.findInboxFolder(ctx, principal, device)
 	}
 
 	if view.Folder == "" {
@@ -174,7 +187,7 @@ func (m *module) inboxScan(ctx context.Context, device deviceapi.Device, store *
 		return view, nil
 	}
 
-	files, err := m.list(ctx, m.inboxStorage, view.Folder)
+	files, err := m.list(ctx, principal, m.inboxStorage, view.Folder)
 	if err != nil {
 		if view.Custom {
 			return view, nil //nolint:nilerr // the folder may not exist until the first upload
@@ -216,7 +229,10 @@ func (m *module) inboxScan(ctx context.Context, device deviceapi.Device, store *
 }
 
 // autoAdd puts the new files of every printer that asked for it in its queue,
-// oldest first, as the person who turned the switch on.
+// oldest first, as the person who turned the switch on: the folder is listed
+// with that person's rights and each job is checked for that person.
+// Changing a printer's folder turns the switch off (see SetInboxFolder), so the
+// folder is always the one that person agreed to.
 func (m *module) autoAdd(ctx context.Context) {
 	m.mu.Lock()
 	store := m.store
@@ -232,7 +248,7 @@ func (m *module) autoAdd(ctx context.Context) {
 			continue
 		}
 
-		view, err := m.inboxScan(ctx, device, store, time.Now())
+		view, err := m.inboxScan(ctx, principal, device, store, time.Now())
 		if err != nil {
 			m.logInbox("read the inbox of %s: %v", id, err)
 
@@ -305,7 +321,7 @@ func (m *module) registerInbox(mux *http.ServeMux) {
 			return
 		}
 
-		view, err := m.inboxScan(r.Context(), device, store, time.Now())
+		view, err := m.inboxScan(r.Context(), routesapi.PrincipalOf(r), device, store, time.Now())
 		if err != nil {
 			logf("read the inbox of %s: %v", device.ID, err)
 			refuse(w, r, StorageUnavailable.New("the storage could not be read"))
@@ -330,7 +346,7 @@ func (m *module) registerInbox(mux *http.ServeMux) {
 			return
 		}
 
-		view, err := m.inboxScan(r.Context(), device, store, time.Now())
+		view, err := m.inboxScan(r.Context(), routesapi.PrincipalOf(r), device, store, time.Now())
 		if err != nil {
 			logf("read the inbox of %s: %v", device.ID, err)
 			refuse(w, r, StorageUnavailable.New("the storage could not be read"))
@@ -484,8 +500,19 @@ func (s *Store) InboxFolderOf(deviceID string) string {
 
 // SetInboxFolder chooses the folder of a printer's uploads. An empty folder
 // goes back to the folder named after the printer.
+//
+// A change of folder turns the automatic adding of that printer off in the same
+// write. The person who turned it on agreed to one folder, and another person
+// who may operate the printer must not be able to aim it at a different one.
+// Choosing the folder already chosen changes nothing.
 func (s *Store) SetInboxFolder(deviceID, folder string) error {
 	return s.update(func(data *snapshot) error {
+		if data.InboxFolders[deviceID] == folder {
+			return nil
+		}
+
+		delete(data.AutoAdd, deviceID)
+
 		if folder == "" {
 			delete(data.InboxFolders, deviceID)
 

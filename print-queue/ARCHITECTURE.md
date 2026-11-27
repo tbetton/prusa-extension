@@ -84,8 +84,9 @@ PrusaSlicer 2 shows only **Upload** and **Upload and Print** for a PrusaLink hos
 - **Which folder.** For a printer, the module uses, in order: the folder a person chose (`inbox_folders`), a folder named after the printer inside `inbox_folder` of the storage `inbox_storage`, or a folder named after the printer at the root of that storage. The name is compared without case or extra spaces, and the printer's id also matches.
 - **Which files.** Printable files only (`.gcode`, `.bgcode`, `.gco`, `.g`), not empty, and unchanged for at least eight seconds so a file still being written is not queued half sent.
 - **Handled files.** Adding or ignoring a file records its modification time in `inbox_handled`. The file is offered again only if it is saved again. A mark is dropped when its file leaves the folder.
-- **Automatic adding.** With the switch on, the loop adds each new file, oldest first, as the person who turned the switch on, after checking that person's rights as for any job.
-- **The connector.** The page asks the connector's `/printers/{printer}/keep` route which folder it saves to, and follows it. **Set up PrusaSlicer uploads** sets it. The module never calls the connector, so it works without it.
+- **Automatic adding.** With the switch on, the loop adds each new file, oldest first, as the person who turned the switch on, after checking that person's rights as for any job. The folder is listed with that person's rights too.
+- **Whose rights.** The storage is always listed for a person: the caller for the page's routes, the owner of the switch for the loop. A person who may operate a printer but may not read the storage sees an empty inbox. Changing the folder of a printer (`SetInboxFolder`) turns its switch off in the same write, so no one can aim another person's switch at a different folder.
+- **The connector.** The page asks the connector's `/printers/{printer}/keep` route which folder it saves to and says when it differs from the one Print Queue reads. **Read that folder** and **Set up PrusaSlicer uploads** change the folder, and only when a person presses them. The module never calls the connector, so it works without it.
 
 ## The page
 
