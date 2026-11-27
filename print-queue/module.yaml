@@ -6,7 +6,7 @@
 
 name: print-queue
 kind: sink
-version: 0.3.3
+version: 0.3.4
 license: MIT
 title: Print Queue
 summary: Queue and schedule prints for each printer.
@@ -22,7 +22,9 @@ platforms:
   - windows_arm64
 
 require:
-  core: ">=0.1.0-beta.1"
+  # device.send, which copies a file onto a printer without starting it, comes
+  # with the core 0.1.0-beta.2.
+  core: ">=0.1.0-beta.2"
   core-access.check: "*"
   core-bus.subscribe: "*"
   core-device.get: "*"
@@ -30,6 +32,8 @@ require:
   core-device.job_history: "*"
   core-device.command: "*"
   core-device.print: "*"
+  # Copy the next file onto the printer ahead of time (see the prestage setting).
+  core-device.send: "*"
   core-storage.stat: "*"
   # Read the folder of each printer the PrusaSlicer 2 Connector saves its
   # uploads in.
@@ -48,6 +52,10 @@ options:
     type: string
     default: "usb"
     summary: Destination folder on the printer.
+  - key: prestage
+    type: bool
+    default: "true"
+    summary: Copy the next queued file onto the printer while it is not ready, so the print starts at once.
   - key: inbox_storage
     type: string
     default: "local"

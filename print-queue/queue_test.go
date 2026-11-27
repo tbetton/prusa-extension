@@ -20,6 +20,9 @@ type fakeFleet struct {
 	state     string
 	connected bool
 	printed   []deviceapi.PrintParams
+	sent      []deviceapi.SendParams
+	sendErr   error
+	printErr  error
 	recent    deviceapi.Jobs
 	history   func(deviceapi.JobHistoryParams) (deviceapi.JobPage, error)
 }
@@ -33,10 +36,24 @@ func (f *fakeFleet) Get(_ context.Context, params deviceapi.GetParams) (deviceap
 func (f *fakeFleet) Print(_ context.Context, params deviceapi.PrintParams) (deviceapi.Started, error) {
 	f.printed = append(f.printed, params)
 
+	if f.printErr != nil {
+		return deviceapi.Started{}, f.printErr
+	}
+
 	if params.Storage == "" {
 		return deviceapi.Started{CommandID: "c1"}, nil
 	}
 	return deviceapi.Started{TransferID: "t1"}, nil
+}
+
+func (f *fakeFleet) Send(_ context.Context, params deviceapi.SendParams) (deviceapi.Sent, error) {
+	if f.sendErr != nil {
+		return deviceapi.Sent{}, f.sendErr
+	}
+
+	f.sent = append(f.sent, params)
+
+	return deviceapi.Sent{TransferID: "s1"}, nil
 }
 
 func (f *fakeFleet) Jobs(_ context.Context, _ deviceapi.JobsParams) (deviceapi.Jobs, error) {
