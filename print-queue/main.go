@@ -48,7 +48,7 @@ import (
 
 const (
 	name    = "print-queue"
-	release = extension.Version("0.3.3")
+	release = extension.Version("0.3.4")
 )
 
 // Settings is what an operator writes under this instance's config block. The
@@ -61,6 +61,9 @@ type Settings struct {
 	KeepHistory         int    `json:"keep_history"`
 	InboxStorage        string `json:"inbox_storage"`
 	InboxFolder         string `json:"inbox_folder"`
+	// Prestage copies the next file onto the printer while it is not ready.
+	// It is a pointer so that a missing key means on and not off.
+	Prestage *bool `json:"prestage"`
 }
 
 func (s Settings) withDefaults() Settings {
@@ -75,6 +78,11 @@ func (s Settings) withDefaults() Settings {
 	s.PrinterFolder = strings.Trim(s.PrinterFolder, "/")
 	if s.PrinterFolder == "" {
 		s.PrinterFolder = "usb"
+	}
+
+	if s.Prestage == nil {
+		on := true
+		s.Prestage = &on
 	}
 
 	s.InboxStorage = strings.TrimSpace(s.InboxStorage)
@@ -236,6 +244,7 @@ func (m *module) configure(_ context.Context, sent Settings, grants wirerpc.Gran
 		store:        store,
 		fleet:        m.devices,
 		now:          time.Now,
+		prestage:     *settings.Prestage,
 		startTimeout: time.Duration(settings.StartTimeoutMinutes) * time.Minute,
 		folder:       settings.PrinterFolder,
 		logf:         logf,

@@ -63,7 +63,7 @@ All text goes through `host.t` and `src/locales/en.json`.
 ## Building and testing
 
 ```sh
-git clone --depth 1 --branch sdk/v0.1.0-beta.1 https://github.com/prusa3d/prusa-connect.git .core
+git clone --depth 1 --branch sdk/v0.1.0-beta.2 https://github.com/prusa3d/prusa-connect.git .core
 go vet ./... && go test -race ./...
 BUILD_ONLY=1 sh install.sh
 ```

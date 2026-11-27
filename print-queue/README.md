@@ -64,6 +64,7 @@ Open **Settings → Extensions → Print Queue**.
 | `poll_seconds` | 10 | How often the extension checks the printers, in seconds |
 | `start_timeout_minutes` | 30 | Maximum time between dispatch and the start of a print, in minutes |
 | `printer_folder` | usb | Destination folder on the printer |
+| `prestage` | true | Copy the next queued file onto the printer while it is not ready, so the print starts at once |
 | `inbox_storage` | local | Storage where the PrusaSlicer 2 Connector saves uploads |
 | `inbox_folder` | print-queue | Folder of that storage with one folder for each printer |
 | `keep_history` | 20 | Number of finished jobs retained per printer |

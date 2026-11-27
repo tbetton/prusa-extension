@@ -108,6 +108,21 @@ func applyPrintEvent(data *snapshot, frame event.Envelope) {
 		if job.DeviceID != origin.ID() {
 			continue
 		}
+		// A copy of the file made ahead of time, for a job still waiting. Its
+		// transfer settles on its own id, and never moves the job itself.
+		if frame.Type == event.TypeDeviceTransferSettled && job.StageTransferID != "" {
+			var transfer event.TransferSettled
+			if json.Unmarshal(frame.Data, &transfer) == nil && transfer.TransferID == job.StageTransferID {
+				if transfer.State == event.TransferDone {
+					job.Staged = true
+					job.StageTransferID = ""
+				} else {
+					job.resetStaging()
+				}
+			}
+
+			continue
+		}
 		recovering := job.DetailCode == "unconfirmed" &&
 			(frame.Type == event.TypeDeviceJobStarted || frame.Type == event.TypeDeviceJobSettled)
 		if !recovering && job.Status != statusStarting && job.Status != statusPrinting {

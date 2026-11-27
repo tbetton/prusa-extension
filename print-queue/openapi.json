@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "print-queue",
-    "version": "0.3.3",
+    "version": "0.3.4",
     "description": "A queue of prints for each printer. Every path is relative to the mount the host assigns."
   },
   "components": {
@@ -56,6 +56,14 @@
           },
           "ended_at": {
             "type": "string"
+          },
+          "staged": {
+            "type": "boolean",
+            "description": "The file was copied onto the printer ahead of time and the print will start from that copy."
+          },
+          "stage_transfer_id": {
+            "type": "string",
+            "description": "The transfer of the copy ahead of time, while it is under way."
           }
         },
         "required": [

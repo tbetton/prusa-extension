@@ -409,6 +409,11 @@
             {job.storage ? `${job.storage}:${job.path}` : `${t('print-queue.onPrinter')} ${job.path}`}
           </p>
         {/if}
+        {#if job.status === 'queued' && (job.staged || job.stage_transfer_id)}
+          <p class="mt-1 text-xs text-muted-foreground">
+            {job.staged ? t('print-queue.job.staged') : t('print-queue.job.staging')}
+          </p>
+        {/if}
         {#if detail}
           <p class="mt-1 text-xs text-destructive">{detail}</p>
         {/if}

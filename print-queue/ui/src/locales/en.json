@@ -135,5 +135,7 @@
   "print-queue.inbox.storageMismatch": "Print Queue reads the storage {inbox}, not {storage}. Change the storage on the connector's card, or inbox_storage in the settings of Print Queue.",
   "print-queue.inbox.setup": "Set up PrusaSlicer uploads",
   "print-queue.inbox.setupHint": "Saves this printer's uploads in {folder} of the storage {storage}, with Save to storage on the connector.",
-  "print-queue.inbox.connectorLocked": "You may not change where the PrusaSlicer 2 Connector saves this printer's uploads."
+  "print-queue.inbox.connectorLocked": "You may not change where the PrusaSlicer 2 Connector saves this printer's uploads.",
+  "print-queue.job.staged": "Copied to the printer: it starts at once when the printer is ready.",
+  "print-queue.job.staging": "Copying to the printer…"
 }
